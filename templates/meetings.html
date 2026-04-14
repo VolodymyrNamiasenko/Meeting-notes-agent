@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Meetings — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>All Meetings</h2>
+    <p>{{ meetings|length }} meetings imported from Notion</p>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchMeetings" placeholder="Search meetings..." oninput="applyMeetingsFilter()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="meetingsDateFrom" onchange="applyMeetingsFilter()">
+    <span class="date-sep">→</span>
+    <input type="date" id="meetingsDateTo" onchange="applyMeetingsFilter()">
+    <button class="btn-clear-dates" onclick="clearMeetingsDateFilter()">Clear</button>
+</div>
+
+<div class="card">
+    <div class="card-body" id="meetingsList">
+        {% for m in meetings %}
+        <div class="item-row" data-date="{{ m.meeting_date or '' }}">
+            <div class="item-content">
+                <a href="/meetings/{{ m.id }}" style="text-decoration:none; color:inherit;">
+                    <div class="item-title">{{ m.title }}</div>
+                </a>
+                <div class="item-meta">
+                    <span>{{ m.meeting_date or 'No date' }}</span>
+                    {% if m.notion_url %}
+                    <a href="{{ m.notion_url }}" target="_blank" class="meeting-link">Notion ↗</a>
+                    {% endif %}
+                    <span>Imported {{ m.imported_at[:10] }}</span>
+                </div>
+            </div>
+            <div class="item-actions">
+                <button class="btn-icon" title="Re-sync" onclick="resyncMeeting({{ m.id }}, this)">↻</button>
+                <button class="btn-icon" title="Delete" onclick="deleteMeeting({{ m.id }}, this)" style="color:var(--red)">✕</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">◈</div>
+            <p>No meetings imported yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function applyMeetingsFilter() {
+    const q = document.getElementById('searchMeetings').value.toLowerCase();
+    const from = document.getElementById('meetingsDateFrom').value;
+    const to = document.getElementById('meetingsDateTo').value;
+
+    document.querySelectorAll('#meetingsList .item-row').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        const date = row.dataset.date || '';
+        let show = true;
+        if (q && !text.includes(q)) show = false;
+        if (from && date && date < from) show = false;
+        if (to && date && date > to) show = false;
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+function clearMeetingsDateFilter() {
+    document.getElementById('meetingsDateFrom').value = '';
+    document.getElementById('meetingsDateTo').value = '';
+    applyMeetingsFilter();
+}
+
+async function resyncMeeting(id, btn) {
+    btn.disabled = true;
+    const resp = await fetch(`/api/resync-meeting/${id}`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Meeting re-synced');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error, true);
+    }
+    btn.disabled = false;
+}
+
+async function deleteMeeting(id, btn) {
+    if (!confirm('Delete this meeting and all its items?')) return;
+    const resp = await fetch(`/api/delete-meeting/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.ok) {
+        btn.closest('.item-row').remove();
+        showToast('Meeting deleted');
+    }
+}
+</script>
+{% endblock %}

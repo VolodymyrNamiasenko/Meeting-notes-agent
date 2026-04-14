@@ -1,0 +1,614 @@
+{% extends "base.html" %}
+{% block title %}Chat Agent — Meeting Manager{% endblock %}
+{% block content %}
+<style>
+    .chat-layout {
+        display: flex;
+        height: calc(100vh - 64px);
+        max-height: calc(100vh - 64px);
+        gap: 0;
+    }
+
+    .chat-sidebar {
+        width: 280px;
+        min-width: 280px;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .chat-sidebar-header {
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex-shrink: 0;
+    }
+
+    .chat-sidebar-header .top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .chat-sidebar-header h3 {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+    }
+
+    .btn-new-chat {
+        padding: 5px 12px;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+    }
+
+    .btn-new-chat:hover { background: var(--accent-hover); }
+
+    .session-search {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 12px;
+    }
+
+    .session-search::placeholder { color: var(--text-muted); }
+
+    .session-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+    }
+
+    .session-item {
+        padding: 10px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 2px;
+    }
+
+    .session-item:hover { background: var(--surface-hover); }
+    .session-item.active { background: var(--accent); color: #fff; }
+    .session-item.active .session-date { color: rgba(255,255,255,0.65); }
+
+    .session-info { flex: 1; min-width: 0; }
+
+    .session-name {
+        font-size: 12.5px;
+        font-weight: 600;
+        line-height: 1.35;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .session-date {
+        font-size: 10.5px;
+        color: var(--text-muted);
+        margin-top: 3px;
+    }
+
+    .session-delete {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px;
+        border-radius: 4px;
+        line-height: 1;
+        flex-shrink: 0;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .session-item:hover .session-delete { opacity: 1; }
+    .session-delete:hover { color: var(--red); }
+
+    .session-empty {
+        text-align: center;
+        padding: 24px 12px;
+        color: var(--text-muted);
+        font-size: 12px;
+    }
+
+    .chat-main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        padding: 0 24px;
+    }
+
+    .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 0;
+        flex-shrink: 0;
+    }
+
+    .chat-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 0 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-height: 0;
+    }
+
+    .chat-msg {
+        display: flex;
+        gap: 12px;
+        max-width: 85%;
+        animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .chat-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+    .chat-msg .avatar {
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 14px; font-weight: 700; flex-shrink: 0;
+    }
+
+    .chat-msg.assistant .avatar { background: var(--accent); color: #fff; }
+    .chat-msg.user .avatar { background: var(--green); color: #fff; }
+
+    .msg-wrapper { position: relative; }
+
+    .chat-msg .bubble {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 13.5px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .chat-msg.user .bubble {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+    }
+
+    .msg-copy-btn {
+        position: absolute;
+        top: 6px;
+        right: -36px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        width: 28px; height: 28px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    .msg-wrapper:hover .msg-copy-btn { opacity: 1; }
+    .msg-copy-btn:hover { color: var(--text); border-color: var(--text-muted); }
+    .msg-copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    .meeting-ref-badge {
+        display: inline-block;
+        background: var(--blue-bg);
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+        margin-bottom: 6px;
+    }
+
+    .truncation-badge {
+        display: inline-block;
+        background: var(--orange-bg);
+        color: var(--orange);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+        margin-bottom: 6px;
+        margin-left: 6px;
+    }
+
+    .chat-input-area {
+        flex-shrink: 0;
+        padding: 16px 0;
+        border-top: 1px solid var(--border);
+    }
+
+    .chat-input-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+    }
+
+    .chat-input-row textarea {
+        flex: 1;
+        min-height: 44px;
+        max-height: 160px;
+        padding: 11px 14px;
+        border-radius: 10px;
+        resize: none;
+        line-height: 1.5;
+    }
+
+    .chat-send-btn {
+        height: 44px;
+        padding: 0 20px;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        font-family: var(--font);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
+
+    .chat-send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .chat-send-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .chat-context-info {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 8px;
+        display: flex; align-items: center; gap: 6px;
+    }
+
+    .chat-context-info .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .dot.green { background: var(--green); }
+    .dot.orange { background: var(--orange); }
+
+    .typing-indicator { display: flex; gap: 4px; padding: 4px 0; }
+    .typing-indicator span {
+        width: 6px; height: 6px;
+        background: var(--text-muted);
+        border-radius: 50%;
+        animation: typingBounce 1.2s infinite;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.15s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes typingBounce {
+        0%, 60%, 100% { transform: translateY(0); }
+        30% { transform: translateY(-6px); }
+    }
+
+    .context-toggle {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 12px; color: var(--text-muted);
+    }
+    .context-toggle label { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+
+    .toggle-switch {
+        position: relative; width: 36px; height: 20px;
+        background: var(--border); border-radius: 10px;
+        cursor: pointer; transition: background 0.2s;
+    }
+    .toggle-switch.active { background: var(--green); }
+    .toggle-switch::after {
+        content: ''; position: absolute;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: #fff; top: 2px; left: 2px;
+        transition: transform 0.2s;
+    }
+    .toggle-switch.active::after { transform: translateX(16px); }
+</style>
+
+<div class="chat-layout">
+    <div class="chat-sidebar">
+        <div class="chat-sidebar-header">
+            <div class="top-row">
+                <h3>Sessions</h3>
+                <button class="btn-new-chat" onclick="newSession()">+ New</button>
+            </div>
+            <input type="text" class="session-search" id="sessionSearch" placeholder="Search sessions..." oninput="filterSessions(this.value)">
+        </div>
+        <div class="session-list" id="sessionList">
+            {% for s in sessions %}
+            <div class="session-item {% if s.id == current_session_id %}active{% endif %}"
+                 data-id="{{ s.id }}" data-name="{{ s.name }}" onclick="loadSession('{{ s.id }}')">
+                <div class="session-info">
+                    <div class="session-name">{{ s.name }}</div>
+                    <div class="session-date">{{ s.updated_at[:16] if s.updated_at else '' }}</div>
+                </div>
+                <button class="session-delete" onclick="event.stopPropagation(); deleteSession('{{ s.id }}')" title="Delete">✕</button>
+            </div>
+            {% endfor %}
+            {% if not sessions %}
+            <div class="session-empty">No sessions yet. Start chatting!</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="chat-main">
+        <div class="chat-header">
+            <div>
+                <h2>Chat Agent</h2>
+                <div class="chat-context-info">
+                    <span class="dot {{ 'green' if transcription_count > 0 else 'orange' }}"></span>
+                    {% if transcription_count > 0 %}
+                        {{ transcription_count }} transcription{{ 's' if transcription_count != 1 }} available
+                    {% else %}
+                        No transcriptions synced yet
+                    {% endif %}
+                </div>
+            </div>
+            <div class="chat-header-actions">
+                <div class="context-toggle">
+                    <label>
+                        <span>Include transcriptions</span>
+                        <div class="toggle-switch active" id="contextToggle" onclick="toggleContext()"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg assistant">
+                <div class="avatar">AI</div>
+                <div class="msg-wrapper">
+                    <div class="bubble">Hello! I'm your project assistant. I can help you find information across your meeting transcriptions.
+
+To ask about a specific meeting, include the meeting name and date, e.g. "DreamTeam.Weekly 2026-04-10 what was discussed?"
+
+How can I help?</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="chat-input-row">
+                <textarea id="chatInput" placeholder="Ask about your meetings..." rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+                <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let includeContext = true;
+let isStreaming = false;
+let currentSessionId = {{ ('"' + current_session_id + '"') | safe if current_session_id else 'null' }};
+
+function toggleContext() {
+    includeContext = !includeContext;
+    document.getElementById('contextToggle').classList.toggle('active', includeContext);
+}
+function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+}
+function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+function scrollToBottom() {
+    const c = document.getElementById('chatMessages');
+    c.scrollTop = c.scrollHeight;
+}
+function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+function getWelcomeHtml() {
+    return `<div class="chat-msg assistant">
+        <div class="avatar">AI</div>
+        <div class="msg-wrapper">
+            <div class="bubble">Hello! I'm your project assistant. I can help you find information across your meeting transcriptions.\n\nTo ask about a specific meeting, include the meeting name and date, e.g. "DreamTeam.Weekly 2026-04-10 what was discussed?"\n\nHow can I help?</div>
+        </div>
+    </div>`;
+}
+
+function addMessage(role, content, meetingRef, truncated) {
+    const container = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + role;
+
+    let badges = '';
+    if (role === 'assistant') {
+        if (meetingRef) {
+            badges += '<div class="meeting-ref-badge">' + escapeHtml(meetingRef) + '</div>';
+        }
+        if (truncated) {
+            badges += '<div class="truncation-badge">⚠ Transcription was truncated — answer may be incomplete</div>';
+        }
+    }
+    const copyBtn = role === 'assistant'
+        ? '<button class="msg-copy-btn" onclick="copyMsg(this)" title="Copy">📋</button>'
+        : '';
+
+    div.innerHTML =
+        '<div class="avatar">' + (role === 'user' ? 'You' : 'AI') + '</div>' +
+        '<div class="msg-wrapper">' +
+            badges +
+            '<div class="bubble">' + escapeHtml(content) + '</div>' +
+            copyBtn +
+        '</div>';
+    container.appendChild(div);
+    scrollToBottom();
+}
+
+function copyMsg(btn) {
+    const bubble = btn.closest('.msg-wrapper').querySelector('.bubble');
+    copyToClipboard(bubble.textContent);
+    btn.classList.add('copied');
+    btn.textContent = '✓';
+    setTimeout(function() {
+        btn.classList.remove('copied');
+        btn.textContent = '📋';
+    }, 1500);
+}
+
+function addTypingIndicator() {
+    const container = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg assistant';
+    div.id = 'typingIndicator';
+    div.innerHTML = '<div class="avatar">AI</div><div class="msg-wrapper"><div class="bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div></div>';
+    container.appendChild(div);
+    scrollToBottom();
+}
+function removeTypingIndicator() {
+    const el = document.getElementById('typingIndicator');
+    if (el) el.remove();
+}
+
+/* ---- Session Management ---- */
+async function newSession() {
+    const resp = await fetch('/api/chat/sessions/new', { method: 'POST' });
+    const data = await resp.json();
+    currentSessionId = data.session_id;
+    document.querySelectorAll('.session-item').forEach(function(el) { el.classList.remove('active'); });
+    document.getElementById('chatMessages').innerHTML = getWelcomeHtml();
+    document.getElementById('chatInput').focus();
+}
+
+async function loadSession(id) {
+    const resp = await fetch('/api/chat/sessions/' + id);
+    const data = await resp.json();
+    if (data.error) return;
+    currentSessionId = id;
+    document.querySelectorAll('.session-item').forEach(function(el) {
+        el.classList.toggle('active', el.dataset.id === id);
+    });
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = getWelcomeHtml();
+    data.messages.forEach(function(m) { addMessage(m.role, m.content); });
+    scrollToBottom();
+}
+
+async function deleteSession(id) {
+    if (!confirm('Delete this session?')) return;
+    await fetch('/api/chat/sessions/' + id, { method: 'DELETE' });
+    const el = document.querySelector('.session-item[data-id="' + id + '"]');
+    if (el) el.remove();
+    if (id === currentSessionId) {
+        currentSessionId = null;
+        document.getElementById('chatMessages').innerHTML = getWelcomeHtml();
+    }
+    const list = document.getElementById('sessionList');
+    if (!list.querySelector('.session-item')) {
+        list.innerHTML = '<div class="session-empty">No sessions yet. Start chatting!</div>';
+    }
+}
+
+function filterSessions(query) {
+    var q = query.toLowerCase();
+    document.querySelectorAll('.session-item').forEach(function(el) {
+        var name = (el.dataset.name || '').toLowerCase();
+        el.style.display = name.includes(q) ? '' : 'none';
+    });
+}
+
+function addSessionToSidebar(id, name) {
+    var list = document.getElementById('sessionList');
+    var empty = list.querySelector('.session-empty');
+    if (empty) empty.remove();
+    list.querySelectorAll('.session-item').forEach(function(el) { el.classList.remove('active'); });
+    var div = document.createElement('div');
+    div.className = 'session-item active';
+    div.dataset.id = id;
+    div.dataset.name = name;
+    div.onclick = function() { loadSession(id); };
+    var now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    div.innerHTML =
+        '<div class="session-info">' +
+            '<div class="session-name">' + escapeHtml(name) + '</div>' +
+            '<div class="session-date">' + now + '</div>' +
+        '</div>' +
+        '<button class="session-delete" onclick="event.stopPropagation(); deleteSession(\'' + id + '\')" title="Delete">✕</button>';
+    list.prepend(div);
+}
+
+/* ---- Send Message ---- */
+async function sendMessage() {
+    if (isStreaming) return;
+    var input = document.getElementById('chatInput');
+    var message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    input.style.height = 'auto';
+    addMessage('user', message);
+    isStreaming = true;
+    document.getElementById('sendBtn').disabled = true;
+    addTypingIndicator();
+    try {
+        var body = { message: message, include_context: includeContext };
+        if (currentSessionId) body.session_id = currentSessionId;
+        var resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        removeTypingIndicator();
+        var data = await resp.json();
+        if (data.error) {
+            addMessage('assistant', '⚠ Error: ' + data.error);
+        } else {
+            addMessage('assistant', data.response, data.meeting_ref, data.context_truncated);
+            if (data.session_id) currentSessionId = data.session_id;
+            if (data.is_new_session && data.session_name) {
+                addSessionToSidebar(data.session_id, data.session_name);
+            }
+        }
+    } catch (e) {
+        removeTypingIndicator();
+        addMessage('assistant', '⚠ Failed to connect: ' + e.message);
+    }
+    isStreaming = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('chatInput').focus();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('chatInput').focus();
+    if (currentSessionId) {
+        var activeItem = document.querySelector('.session-item[data-id="' + currentSessionId + '"]');
+        if (activeItem) loadSession(currentSessionId);
+    }
+});
+</script>
+{% endblock %}

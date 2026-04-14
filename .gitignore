@@ -1,0 +1,12 @@
+config.json
+meeting_manager.db
+__pycache__/
+*.pyc
+.env
+.DS_Store
+exports/
+debug_last_request.json
+# Looks like a local duplicate copy of the project directory
+meeting-manager/
+# General SQLite / local DB files
+*.db

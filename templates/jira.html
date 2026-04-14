@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}JIRA Tickets — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>JIRA Tickets</h2>
+    <p>{{ tickets|length }} tickets for the customer team</p>
+</div>
+
+{% if not config.get('jira_domain') or not config.get('jira_api_token') %}
+<div class="card" style="border-left:3px solid var(--yellow); margin-bottom:16px;">
+    <div class="card-body" style="padding:16px;">
+        ⚠️ Jira integration not configured. <a href="/settings" style="color:var(--blue)">Go to Settings</a> to set up your Jira domain, API token, parent task key, and assignee email.
+    </div>
+</div>
+{% endif %}
+
+<div class="search-bar">
+    <input type="text" id="searchJira" placeholder="Search tickets..." oninput="onSearchJira()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="jiraDateFrom" onchange="onSearchJira()">
+    <span class="date-sep">→</span>
+    <input type="date" id="jiraDateTo" onchange="onSearchJira()">
+    <button class="btn-clear-dates" onclick="clearJiraDateFilter()">Clear</button>
+</div>
+
+<div class="filter-bar">
+    <button class="filter-btn active" data-filter="all" onclick="filterJira('all', this)">All</button>
+    <button class="filter-btn" data-filter="pending" onclick="filterJira('pending', this)">Pending</button>
+    <button class="filter-btn" data-filter="created" onclick="filterJira('created', this)">Created</button>
+    <button class="filter-btn" data-filter="cancelled" onclick="filterJira('cancelled', this)">Cancelled</button>
+</div>
+
+<div class="card">
+    <div class="card-body" id="jiraList">
+        {% for t in tickets %}
+        <div class="item-row" data-resolved="{{ t.resolved }}" data-status="{{ t.status or 'pending' }}" data-date="{{ t.meeting_date or '' }}">
+            {% if t.status == 'created' %}
+            <span class="tag tag-resolved">created</span>
+            {% elif t.status == 'cancelled' %}
+            <span class="tag" style="background:var(--surface-2);color:var(--text-secondary);">cancelled</span>
+            {% else %}
+            <span class="tag tag-open">pending</span>
+            {% endif %}
+            <div class="item-content {% if t.status == 'cancelled' %}resolved-text{% endif %}">
+                <div class="item-title">
+                    {{ t.title }}
+                    {% if t.jira_issue_key %}
+                    <a href="https://{{ config.get('jira_domain', '') }}/browse/{{ t.jira_issue_key }}" target="_blank" style="color:var(--blue);font-size:0.85em;margin-left:8px;">{{ t.jira_issue_key }} ↗</a>
+                    {% endif %}
+                </div>
+                <div class="item-desc">{{ t.description }}</div>
+                <div class="item-meta">
+                    <a href="/meetings/{{ t.meeting_id }}" class="meeting-link">{{ t.meeting_title }}</a>
+                    <span>{{ t.meeting_date }}</span>
+                    {% if t.created_in_jira_at %}
+                    <span>Created: {{ t.created_in_jira_at[:16] }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="item-actions">
+                {% if t.status != 'created' and t.status != 'cancelled' %}
+                <button class="btn btn-primary btn-sm" onclick="createJiraSubtask({{ t.id }}, this)">Create in Jira</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelJiraTicket({{ t.id }})">✕ Cancel</button>
+                {% endif %}
+                <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(`[{{ t.meeting_title }} | {{ t.meeting_date }}]\n{{ t.title }}`)" title="Copy title only">📋 Title</button>
+                <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(`[{{ t.meeting_title }} | {{ t.meeting_date }}]\n{{ t.title }}\n\n{{ t.description }}`)" title="Copy title + description">📋 Full</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">◇</div>
+            <p>No JIRA tickets yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="pagination" id="jiraPag"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let jiraFilter = 'all';
+let jiraSearch = '';
+
+function getVisibleJiraRows() {
+    const from = document.getElementById('jiraDateFrom').value;
+    const to = document.getElementById('jiraDateTo').value;
+    return Array.from(document.querySelectorAll('#jiraList .item-row')).filter(row => {
+        const status = row.dataset.status || 'pending';
+        if (jiraFilter === 'pending' && status !== 'pending') return false;
+        if (jiraFilter === 'created' && status !== 'created') return false;
+        if (jiraFilter === 'cancelled' && status !== 'cancelled') return false;
+        if (jiraSearch && !row.textContent.toLowerCase().includes(jiraSearch)) return false;
+        const date = row.dataset.date || '';
+        if (from && date && date < from) return false;
+        if (to && date && date > to) return false;
+        return true;
+    });
+}
+
+const jiraPag = setupPagination('jiraList', 'jiraPag', getVisibleJiraRows);
+
+function filterJira(status, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    jiraFilter = status;
+    jiraPag.reset();
+}
+
+function onSearchJira() {
+    jiraSearch = document.getElementById('searchJira').value.toLowerCase();
+    jiraPag.reset();
+}
+
+function clearJiraDateFilter() {
+    document.getElementById('jiraDateFrom').value = '';
+    document.getElementById('jiraDateTo').value = '';
+    jiraPag.reset();
+}
+
+async function createJiraSubtask(ticketId, btn) {
+    if (btn) btn.disabled = true;
+    try {
+        const resp = await fetch('/api/jira/create-subtask', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ ticket_id: ticketId })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            showToast('Sub-task created: ' + data.issue_key);
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(data.error || 'Failed to create', true);
+            if (btn) btn.disabled = false;
+        }
+    } catch (e) {
+        showToast('Error: ' + e.message, true);
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function cancelJiraTicket(ticketId) {
+    const resp = await fetch('/api/jira/cancel', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ticket_id: ticketId })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Ticket cancelled');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast(data.error || 'Failed', true);
+    }
+}
+
+jiraPag.render();
+</script>
+{% endblock %}

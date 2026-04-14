@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+{% block title %}Statistics — Meeting Manager{% endblock %}
+{% block content %}
+<style>
+    .stats-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 14px;
+        margin-bottom: 28px;
+    }
+
+    .stats-kpi {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 18px;
+        position: relative;
+        overflow: hidden;
+        animation: statsFadeUp 0.5s ease-out both;
+    }
+
+    .stats-kpi::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+    }
+
+    .stats-kpi:nth-child(1)::before { background: var(--accent); }
+    .stats-kpi:nth-child(2)::before { background: var(--blue); }
+    .stats-kpi:nth-child(3)::before { background: var(--green); }
+    .stats-kpi:nth-child(4)::before { background: var(--orange); }
+    .stats-kpi:nth-child(5)::before { background: var(--red); }
+    .stats-kpi:nth-child(6)::before { background: var(--accent); }
+
+    .stats-kpi:nth-child(1) { animation-delay: 0.05s; }
+    .stats-kpi:nth-child(2) { animation-delay: 0.1s; }
+    .stats-kpi:nth-child(3) { animation-delay: 0.15s; }
+    .stats-kpi:nth-child(4) { animation-delay: 0.2s; }
+    .stats-kpi:nth-child(5) { animation-delay: 0.25s; }
+    .stats-kpi:nth-child(6) { animation-delay: 0.3s; }
+
+    .stats-kpi-label {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+        font-weight: 600;
+    }
+
+    .stats-kpi-value {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 1.8rem;
+        line-height: 1;
+    }
+
+    .stats-kpi-sub {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    .stats-charts-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    @media (max-width: 860px) {
+        .stats-charts-grid { grid-template-columns: 1fr; }
+    }
+
+    .stats-chart-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        animation: statsFadeUp 0.5s ease-out both;
+    }
+
+    .stats-chart-card.wide {
+        grid-column: 1 / -1;
+    }
+
+    .stats-chart-title {
+        font-weight: 700;
+        font-size: 13.5px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .stats-chart-title .dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .stats-bar-group rect {
+        rx: 4;
+        transition: opacity 0.2s;
+    }
+
+    .stats-bar-group:hover rect {
+        opacity: 0.85;
+    }
+
+    svg text {
+        font-family: var(--font);
+    }
+
+    .stats-hbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .stats-hbar-label {
+        width: 80px;
+        font-size: 12px;
+        text-align: right;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+        color: var(--text-muted);
+    }
+
+    .stats-hbar-track {
+        flex: 1;
+        height: 22px;
+        background: var(--surface-hover);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .stats-hbar-fill {
+        height: 100%;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        padding-left: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        min-width: fit-content;
+        transition: width 0.4s ease;
+    }
+
+    .stats-table-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px;
+        margin-top: 16px;
+        animation: statsFadeUp 0.5s ease-out both;
+        overflow-x: auto;
+    }
+
+    .stats-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+    }
+
+    .stats-table th {
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 2px solid var(--border);
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        white-space: nowrap;
+    }
+
+    .stats-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .stats-table tr:last-child td { border-bottom: none; }
+    .stats-table tr:hover td { background: var(--surface-hover); }
+
+    .stats-tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 10.5px;
+        font-weight: 600;
+    }
+
+    .stats-tag-long { background: var(--red-bg); color: var(--red); }
+    .stats-tag-medium { background: var(--green-bg); color: var(--green); }
+    .stats-tag-short { background: rgba(108,92,231,0.15); color: var(--accent); }
+
+    @keyframes statsFadeUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+<div class="page-header">
+    <h2>Meeting Statistics</h2>
+    <p>Analytics across all meetings</p>
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="statsDateFrom" onchange="applyStatsFilter()">
+    <span class="date-sep">→</span>
+    <input type="date" id="statsDateTo" onchange="applyStatsFilter()">
+    <button class="btn-clear-dates" onclick="clearStatsFilter()">Clear</button>
+</div>
+
+<div class="stats-kpi-row" id="statsKpis"></div>
+<div class="stats-charts-grid" id="statsCharts"></div>
+<div id="statsExtras"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pass meeting data from Jinja to JS
+const allMeetings = [
+    {% for m in meetings %}
+    {
+        id: {{ m.id }},
+        title: {{ m.title|tojson }},
+        date: {{ (m.meeting_date or '')|tojson }},
+        decisions: {{ m.decision_count }},
+        jira: {{ m.jira_count }},
+        clickup: {{ m.clickup_count }},
+        customerTopics: {{ m.customer_topic_count }},
+        internalTopics: {{ m.internal_topic_count }}
+    },
+    {% endfor %}
+];
+
+function getFilteredMeetings() {
+    const from = document.getElementById('statsDateFrom').value;
+    const to = document.getElementById('statsDateTo').value;
+    return allMeetings.filter(m => {
+        if (!m.date) return false;
+        if (from && m.date < from) return false;
+        if (to && m.date > to) return false;
+        return true;
+    });
+}
+
+function applyStatsFilter() {
+    renderStats(getFilteredMeetings());
+}
+
+function clearStatsFilter() {
+    document.getElementById('statsDateFrom').value = '';
+    document.getElementById('statsDateTo').value = '';
+    renderStats(allMeetings.filter(m => m.date));
+}
+
+function getDow(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+}
+
+function renderStats(meetings) {
+    if (!meetings.length) {
+        document.getElementById('statsKpis').innerHTML = '<div class="stats-kpi" style="grid-column:1/-1;text-align:center;color:var(--text-muted);">No meetings found in the selected date range.</div>';
+        document.getElementById('statsCharts').innerHTML = '';
+        document.getElementById('statsExtras').innerHTML = '';
+        return;
+    }
+
+    const totalMeetings = meetings.length;
+    const totalDecisions = meetings.reduce((s,m) => s+m.decisions, 0);
+    const totalJira = meetings.reduce((s,m) => s+m.jira, 0);
+    const totalClickUp = meetings.reduce((s,m) => s+m.clickup, 0);
+    const totalCustTopics = meetings.reduce((s,m) => s+m.customerTopics, 0);
+    const totalIntTopics = meetings.reduce((s,m) => s+m.internalTopics, 0);
+
+    // Group by day
+    const days = {};
+    meetings.forEach(m => {
+        if (!days[m.date]) days[m.date] = {count:0, dow: getDow(m.date), decisions:0, jira:0, clickup:0};
+        days[m.date].count++;
+        days[m.date].decisions += m.decisions;
+        days[m.date].jira += m.jira;
+        days[m.date].clickup += m.clickup;
+    });
+    const dayEntries = Object.entries(days).sort((a,b) => a[0].localeCompare(b[0]));
+    const avgPerDay = totalMeetings / dayEntries.length;
+    const totalItems = totalDecisions + totalJira + totalClickUp + totalCustTopics + totalIntTopics;
+    const avgItems = totalMeetings ? (totalItems / totalMeetings).toFixed(1) : '0';
+
+    // KPIs
+    document.getElementById('statsKpis').innerHTML = `
+        <div class="stats-kpi"><div class="stats-kpi-label">Total Meetings</div><div class="stats-kpi-value" style="color:var(--accent)">${totalMeetings}</div><div class="stats-kpi-sub">over ${dayEntries.length} working days</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">Avg / Day</div><div class="stats-kpi-value" style="color:var(--blue)">${avgPerDay.toFixed(1)}</div><div class="stats-kpi-sub">meetings per day</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">Decisions</div><div class="stats-kpi-value" style="color:var(--green)">${totalDecisions}</div><div class="stats-kpi-sub">total decisions recorded</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">JIRA Tickets</div><div class="stats-kpi-value" style="color:var(--orange)">${totalJira}</div><div class="stats-kpi-sub">open points for customer</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">ClickUp Tickets</div><div class="stats-kpi-value" style="color:var(--red)">${totalClickUp}</div><div class="stats-kpi-sub">open points for dev team</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">Avg Items/Meeting</div><div class="stats-kpi-value" style="color:var(--accent)">${avgItems}</div><div class="stats-kpi-sub">decisions + tickets + topics</div></div>
+    `;
+
+    // Build charts
+    const chartsEl = document.getElementById('statsCharts');
+    chartsEl.innerHTML = '';
+
+    // Chart 1: Daily meetings count bar chart
+    {
+        const W=520, H=220, padL=50, padR=20, padT=20, padB=50;
+        const cw=W-padL-padR, ch=H-padT-padB;
+        const maxCount = Math.max(...dayEntries.map(d=>d[1].count));
+        const barW = cw/dayEntries.length * 0.6;
+        const gap = cw/dayEntries.length;
+
+        let bars = '';
+        dayEntries.forEach(([date, info], i) => {
+            const x = padL + i*gap + gap/2;
+            const hCount = (info.count/maxCount)*ch*0.9;
+            bars += `<g class="stats-bar-group">
+                <rect x="${x - barW/2}" y="${padT+ch-hCount}" width="${barW}" height="${hCount}" fill="var(--accent)" opacity="0.85"/>
+                <text x="${x}" y="${H-padB+16}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${info.dow} ${date.slice(5)}</text>
+                <text x="${x}" y="${padT+ch-hCount-5}" text-anchor="middle" fill="var(--accent)" font-size="10" font-weight="600">${info.count}</text>
+            </g>`;
+        });
+
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+        card.innerHTML = `
+            <div class="stats-chart-title"><span class="dot" style="background:var(--accent)"></span> Meetings per Day</div>
+            <svg viewBox="0 0 ${W} ${H}" width="100%">${bars}</svg>
+        `;
+        chartsEl.appendChild(card);
+    }
+
+    // Chart 2: Item distribution donut (Decisions, Jira, ClickUp, Customer, Internal)
+    {
+        const data = [
+            {label:'Decisions',val:totalDecisions,color:'var(--green)'},
+            {label:'JIRA',val:totalJira,color:'var(--orange)'},
+            {label:'ClickUp',val:totalClickUp,color:'var(--red)'},
+            {label:'Customer Topics',val:totalCustTopics,color:'var(--blue)'},
+            {label:'Internal Topics',val:totalIntTopics,color:'var(--accent)'},
+        ].filter(d => d.val > 0);
+        const total = data.reduce((s,d) => s+d.val, 0);
+
+        let donut = '';
+        let offset = 0;
+        const R=65, cx=100, cy=100;
+        data.forEach(d => {
+            const pct = d.val/total;
+            const circ = 2*Math.PI*R;
+            donut += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${d.color}" stroke-width="20"
+                stroke-dasharray="${pct*circ} ${circ}" stroke-dashoffset="${-offset*circ}" transform="rotate(-90 ${cx} ${cy})" opacity="0.9"/>`;
+            offset += pct;
+        });
+
+        const legend = data.map((d,i) => `<text x="210" y="${60+i*24}" fill="var(--text)" font-size="11.5"><tspan fill="${d.color}" font-size="14">●</tspan>  ${d.label}: ${d.val} (${(d.val/total*100).toFixed(0)}%)</text>`).join('');
+
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+        card.innerHTML = `
+            <div class="stats-chart-title"><span class="dot" style="background:var(--green)"></span> Items Distribution</div>
+            <svg viewBox="0 0 420 220" width="100%">
+                ${donut}
+                <text x="${cx}" y="${cy-4}" text-anchor="middle" fill="var(--text)" font-size="24" font-weight="700" font-family="var(--mono)">${total}</text>
+                <text x="${cx}" y="${cy+14}" text-anchor="middle" fill="var(--text-muted)" font-size="10">total items</text>
+                ${legend}
+            </svg>
+        `;
+        chartsEl.appendChild(card);
+    }
+
+    // Chart 3: Daily items stacked bar
+    {
+        const W=520, H=200, padL=50, padR=20, padT=20, padB=50;
+        const cw=W-padL-padR, ch=H-padT-padB;
+        const maxItems = Math.max(...dayEntries.map(d=>d[1].decisions + d[1].jira + d[1].clickup));
+        const gap = cw/dayEntries.length;
+        const barW = gap * 0.5;
+
+        let bars = '';
+        dayEntries.forEach(([date, info], i) => {
+            const x = padL + i*gap + gap/2;
+            const total = info.decisions + info.jira + info.clickup;
+            if (maxItems === 0) return;
+
+            let yOff = padT + ch;
+            const segments = [
+                {val: info.decisions, color: 'var(--green)'},
+                {val: info.jira, color: 'var(--orange)'},
+                {val: info.clickup, color: 'var(--red)'},
+            ];
+
+            segments.forEach(seg => {
+                if (seg.val > 0) {
+                    const h = (seg.val / maxItems) * ch * 0.9;
+                    yOff -= h;
+                    bars += `<rect x="${x - barW/2}" y="${yOff}" width="${barW}" height="${h}" fill="${seg.color}" opacity="0.8" rx="3"/>`;
+                }
+            });
+
+            bars += `<text x="${x}" y="${H-padB+16}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${info.dow} ${date.slice(5)}</text>`;
+            if (total > 0) {
+                bars += `<text x="${x}" y="${padT + ch - (total/maxItems)*ch*0.9 - 5}" text-anchor="middle" fill="var(--text)" font-size="10" font-weight="600">${total}</text>`;
+            }
+        });
+
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+        card.innerHTML = `
+            <div class="stats-chart-title">
+                <span class="dot" style="background:var(--green)"></span> Decisions
+                <span class="dot" style="background:var(--orange);margin-left:4px"></span> JIRA
+                <span class="dot" style="background:var(--red);margin-left:4px"></span> ClickUp
+                <span style="color:var(--text-muted);font-weight:400;font-size:12px;margin-left:4px">per Day</span>
+            </div>
+            <svg viewBox="0 0 ${W} ${H}" width="100%">${bars}</svg>
+        `;
+        chartsEl.appendChild(card);
+    }
+
+    // Chart 4: Daily meeting load horizontal bars
+    {
+        const maxDayCount = Math.max(...dayEntries.map(d=>d[1].count));
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+
+        let hbars = '';
+        dayEntries.forEach(([date, info]) => {
+            const pct = (info.count / maxDayCount) * 100;
+            hbars += `<div class="stats-hbar">
+                <div class="stats-hbar-label">${info.dow} ${date.slice(5)}</div>
+                <div class="stats-hbar-track"><div class="stats-hbar-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--accent),var(--blue))">${info.count} mtgs</div></div>
+            </div>`;
+        });
+
+        card.innerHTML = `
+            <div class="stats-chart-title"><span class="dot" style="background:var(--blue)"></span> Daily Meeting Load</div>
+            ${hbars}
+        `;
+        chartsEl.appendChild(card);
+    }
+
+    // Table: All meetings
+    const extrasEl = document.getElementById('statsExtras');
+    {
+        let rows = meetings.map(m => {
+            const totalItems = m.decisions + m.jira + m.clickup + m.customerTopics + m.internalTopics;
+            return `<tr>
+                <td>${m.date}</td>
+                <td>${getDow(m.date)}</td>
+                <td style="white-space:normal;max-width:300px"><a href="/meetings/${m.id}" style="color:var(--text);text-decoration:none;">${m.title}</a></td>
+                <td>${m.decisions}</td>
+                <td>${m.jira}</td>
+                <td>${m.clickup}</td>
+                <td>${m.customerTopics + m.internalTopics}</td>
+                <td><span style="font-weight:600;color:${totalItems > 5 ? 'var(--orange)' : 'var(--text-muted)'}">${totalItems}</span></td>
+            </tr>`;
+        }).join('');
+
+        extrasEl.innerHTML = `
+            <div class="stats-table-card">
+                <div class="stats-chart-title"><span class="dot" style="background:var(--accent)"></span> All Meetings Detail</div>
+                <table class="stats-table">
+                    <thead><tr><th>Date</th><th>Day</th><th>Meeting Title</th><th>Decisions</th><th>JIRA</th><th>ClickUp</th><th>Topics</th><th>Total</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+}
+
+// Initial render
+renderStats(allMeetings.filter(m => m.date));
+</script>
+{% endblock %}

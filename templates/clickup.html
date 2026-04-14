@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}ClickUp Tickets — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>ClickUp Tickets</h2>
+    <p>{{ tickets|length }} tickets for the internal dev team</p>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchClickUp" placeholder="Search tickets..." oninput="onSearchClickUp()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="clickupDateFrom" onchange="onSearchClickUp()">
+    <span class="date-sep">→</span>
+    <input type="date" id="clickupDateTo" onchange="onSearchClickUp()">
+    <button class="btn-clear-dates" onclick="clearClickUpDateFilter()">Clear</button>
+</div>
+
+<div class="filter-bar">
+    <button class="filter-btn active" data-filter="all" onclick="setFilter('all', this)">All</button>
+    <button class="filter-btn" data-filter="pending" onclick="setFilter('pending', this)">Pending</button>
+    <button class="filter-btn" data-filter="created" onclick="setFilter('created', this)">Created</button>
+    <button class="filter-btn" data-filter="cancelled" onclick="setFilter('cancelled', this)">Cancelled</button>
+</div>
+
+{% if not config.get('clickup_token') or not config.get('clickup_list_id') %}
+<div style="background:var(--orange-bg); border:1px solid rgba(253,203,110,0.3); border-radius:var(--radius); padding:14px 20px; margin-bottom:16px; font-size:13px; color:var(--orange);">
+    ⚠ ClickUp integration not configured. <a href="/settings" style="color:var(--orange); font-weight:600;">Go to Settings →</a>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body" id="clickupList">
+        {% for t in tickets %}
+        <div class="item-row" data-status="{{ t.status }}" data-meeting-title="{{ t.meeting_title }}" data-date="{{ t.meeting_date or '' }}">
+            <span class="tag {{ 'tag-created' if t.status == 'created' else ('tag-cancelled' if t.status == 'cancelled' else 'tag-pending') }}">{{ t.status }}</span>
+            <div class="item-content {% if t.status == 'cancelled' %}resolved-text{% endif %}">
+                <div class="item-title">{{ t.title }}</div>
+                <div class="item-desc">{{ t.description }}</div>
+                <div class="item-meta">
+                    <a href="/meetings/{{ t.meeting_id }}" class="meeting-link">{{ t.meeting_title }}</a>
+                    <span>{{ t.meeting_date }}</span>
+                    {% if t.clickup_task_id %}
+                    <span>· ClickUp #{{ t.clickup_task_id }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="item-actions">
+                {% if t.status == 'pending' %}
+                <button class="btn btn-primary btn-sm" onclick="createClickUp({{ t.id }}, this)">Push to ClickUp</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelClickUp({{ t.id }}, this)" style="color:var(--red); border-color:var(--red);">✕ Cancel</button>
+                {% endif %}
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ t.meeting_title }} | {{ t.meeting_date }}]\n{{ t.title }}\n\n{{ t.description }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">▸</div>
+            <p>No ClickUp tickets yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="pagination" id="clickupPag"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let clickupFilter = 'all';
+let clickupSearch = '';
+
+function getVisibleClickUpRows() {
+    const from = document.getElementById('clickupDateFrom').value;
+    const to = document.getElementById('clickupDateTo').value;
+    return Array.from(document.querySelectorAll('#clickupList .item-row')).filter(row => {
+        if (clickupFilter !== 'all' && row.dataset.status !== clickupFilter) return false;
+        if (clickupSearch && !row.textContent.toLowerCase().includes(clickupSearch)) return false;
+        const date = row.dataset.date || '';
+        if (from && date && date < from) return false;
+        if (to && date && date > to) return false;
+        return true;
+    });
+}
+
+const clickupPag = setupPagination('clickupList', 'clickupPag', getVisibleClickUpRows);
+
+function setFilter(status, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    clickupFilter = status;
+    location.hash = status;
+    clickupPag.reset();
+}
+
+function onSearchClickUp() {
+    clickupSearch = document.getElementById('searchClickUp').value.toLowerCase();
+    clickupPag.reset();
+}
+
+function clearClickUpDateFilter() {
+    document.getElementById('clickupDateFrom').value = '';
+    document.getElementById('clickupDateTo').value = '';
+    clickupPag.reset();
+}
+
+// Restore filter from URL hash on page load
+(function restoreFilter() {
+    const hash = location.hash.replace('#', '');
+    if (['pending', 'created', 'cancelled'].includes(hash)) {
+        clickupFilter = hash;
+        document.querySelectorAll('.filter-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.filter === hash);
+        });
+    }
+    clickupPag.render();
+})();
+
+async function createClickUp(ticketId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    const resp = await fetch('/api/clickup/create-task', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ticket_id: ticketId})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Task created in ClickUp');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error, true);
+        btn.disabled = false;
+        btn.textContent = 'Push to ClickUp';
+    }
+}
+
+async function cancelClickUp(ticketId, btn) {
+    if (!confirm('Cancel this open point? It will be marked as cancelled and won\'t be pushed to ClickUp.')) return;
+    btn.disabled = true;
+    btn.textContent = 'Cancelling...';
+    const resp = await fetch('/api/clickup/cancel', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ticket_id: ticketId})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Open point cancelled');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error, true);
+        btn.disabled = false;
+        btn.textContent = '✕ Cancel';
+    }
+}
+</script>
+{% endblock %}

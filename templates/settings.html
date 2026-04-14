@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}Settings — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Settings</h2>
+    <p>Configure integrations</p>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Notion Integration</h3></div>
+    <div class="card-body" style="padding:20px;">
+        <div class="form-group">
+            <label>Notion API Token</label>
+            <input type="password" id="notionToken" value="{{ config.get('notion_token', '') }}" placeholder="ntn_...">
+            <div class="form-hint">Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank" style="color:var(--blue)">notion.so/my-integrations</a> and share your database with it.</div>
+        </div>
+        <div class="form-group">
+            <label>Notion Database ID</label>
+            <input type="text" id="notionDbId" value="{{ config.get('notion_database_id', '') }}" placeholder="abc123def456...">
+            <div class="form-hint">The 32-character ID from your database URL: notion.so/&lt;workspace&gt;/<b>&lt;database_id&gt;</b>?v=...</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>ClickUp Integration</h3></div>
+    <div class="card-body" style="padding:20px;">
+        <div class="form-group">
+            <label>ClickUp API Token</label>
+            <input type="password" id="clickupToken" value="{{ config.get('clickup_token', '') }}" placeholder="pk_...">
+            <div class="form-hint">Find it in ClickUp → Settings → Apps → API Token</div>
+        </div>
+        <div class="form-group">
+            <label>ClickUp List ID</label>
+            <input type="text" id="clickupListId" value="{{ config.get('clickup_list_id', '') }}" placeholder="901234567">
+            <div class="form-hint">The list ID where new tasks will be created. Find it in the list URL or list settings.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Jira Integration</h3></div>
+    <div class="card-body" style="padding:20px;">
+        <div class="form-group">
+            <label>Jira Domain</label>
+            <input type="text" id="jiraDomain" value="{{ config.get('jira_domain', '') }}" placeholder="your-company.atlassian.net">
+            <div class="form-hint">Your Atlassian domain (e.g. <b>your-company.atlassian.net</b>), without https://</div>
+        </div>
+        <div class="form-group">
+            <label>Jira Email</label>
+            <input type="email" id="jiraEmail" value="{{ config.get('jira_email', '') }}" placeholder="you@company.com">
+            <div class="form-hint">The email address of your Jira account used for API authentication.</div>
+        </div>
+        <div class="form-group">
+            <label>Jira API Token</label>
+            <input type="password" id="jiraApiToken" value="{{ config.get('jira_api_token', '') }}" placeholder="ATATT3x...">
+            <div class="form-hint">Create one at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color:var(--blue)">id.atlassian.com → API tokens</a></div>
+        </div>
+        <div class="form-group">
+            <label>Parent Task Key (for sub-tasks)</label>
+            <input type="text" id="jiraParentKey" value="{{ config.get('jira_parent_key', '') }}" placeholder="CMP2I-69">
+            <div class="form-hint">The Jira issue key of the parent task. New tickets will be created as sub-tasks under this task (Project → Epic → Story → <b>Task</b> → Sub-task).</div>
+        </div>
+        <div class="form-group">
+            <label>Auto-Assign To (Email)</label>
+            <input type="email" id="jiraAssigneeEmail" value="{{ config.get('jira_assignee_email', '') }}" placeholder="assignee@company.com">
+            <div class="form-hint">All created sub-tasks will be automatically assigned to this user. Leave blank to leave unassigned.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Anthropic API (Chat Agent)</h3></div>
+    <div class="card-body" style="padding:20px;">
+        <div class="form-group">
+            <label>Anthropic API Key</label>
+            <input type="password" id="anthropicApiKey" value="{{ config.get('anthropic_api_key', '') }}" placeholder="sk-ant-...">
+            <div class="form-hint">Your Anthropic API key for the local chat agent. Get one at <a href="https://console.anthropic.com/" target="_blank" style="color:var(--blue)">console.anthropic.com</a></div>
+        </div>
+        <div class="form-group">
+            <label>System Prompt</label>
+            <textarea id="systemPrompt" rows="5" placeholder="You are a project coordinator assistant...">{{ config.get('system_prompt', '') }}</textarea>
+            <div class="form-hint">The system prompt that defines your chat agent's behavior. Leave blank for a default assistant.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><h3>Transcriptions (Notion)</h3></div>
+    <div class="card-body" style="padding:20px;">
+        <div class="form-group">
+            <label>Transcriptions Notion Database ID</label>
+            <input type="text" id="transcriptionsDbId" value="{{ config.get('transcriptions_database_id', '') }}" placeholder="abc123def456...">
+            <div class="form-hint">The 32-character ID of your separate Notion database for meeting transcriptions. Uses the same Notion API token configured above.</div>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary" onclick="saveSettings()" id="saveBtn" style="margin-top:8px;">
+    Save Settings
+</button>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function saveSettings() {
+    const btn = document.getElementById('saveBtn');
+    btn.disabled = true;
+
+    const resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            notion_token: document.getElementById('notionToken').value.trim(),
+            notion_database_id: document.getElementById('notionDbId').value.trim(),
+            clickup_token: document.getElementById('clickupToken').value.trim(),
+            clickup_list_id: document.getElementById('clickupListId').value.trim(),
+            jira_domain: document.getElementById('jiraDomain').value.trim(),
+            jira_email: document.getElementById('jiraEmail').value.trim(),
+            jira_api_token: document.getElementById('jiraApiToken').value.trim(),
+            jira_parent_key: document.getElementById('jiraParentKey').value.trim(),
+            jira_assignee_email: document.getElementById('jiraAssigneeEmail').value.trim(),
+            anthropic_api_key: document.getElementById('anthropicApiKey').value.trim(),
+            system_prompt: document.getElementById('systemPrompt').value.trim(),
+            transcriptions_database_id: document.getElementById('transcriptionsDbId').value.trim(),
+        })
+    });
+
+    const data = await resp.json();
+    if (data.ok) showToast('Settings saved');
+    else showToast('Failed to save', true);
+    btn.disabled = false;
+}
+</script>
+{% endblock %}

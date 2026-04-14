@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Decisions — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>All Decisions</h2>
+    <p>{{ decisions|length }} decisions across all meetings</p>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchDecisions" placeholder="Search decisions..." oninput="applyDecisionsFilter()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="decisionsDateFrom" onchange="applyDecisionsFilter()">
+    <span class="date-sep">→</span>
+    <input type="date" id="decisionsDateTo" onchange="applyDecisionsFilter()">
+    <button class="btn-clear-dates" onclick="clearDecisionsDateFilter()">Clear</button>
+</div>
+
+<div class="card">
+    <div class="card-body" id="decisionsList">
+        {% for d in decisions %}
+        <div class="item-row" data-date="{{ d.meeting_date or '' }}">
+            <span class="tag tag-code">{{ d.decision_code }}</span>
+            <div class="item-content">
+                <div class="item-title">{{ d.summary }}</div>
+                <div class="item-meta">
+                    <span>{{ d.decided_by }}</span>
+                    <span>·</span>
+                    <a href="/meetings/{{ d.meeting_id }}" class="meeting-link">{{ d.meeting_title }}</a>
+                    <span>{{ d.meeting_date }}</span>
+                </div>
+            </div>
+            <div class="item-actions">
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ d.meeting_title }} | {{ d.meeting_date }}]\n[{{ d.decision_code }}] {{ d.summary }}\nDecided by: {{ d.decided_by }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="icon">✓</div>
+            <p>No decisions recorded yet.</p>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="pagination" id="decisionsPag"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const pag = setupPagination('decisionsList', 'decisionsPag', () =>
+        Array.from(document.querySelectorAll('#decisionsList .item-row')).filter(r => !r.dataset._filteredOut)
+    );
+
+    window.applyDecisionsFilter = function() {
+        const q = document.getElementById('searchDecisions').value.toLowerCase();
+        const from = document.getElementById('decisionsDateFrom').value;
+        const to = document.getElementById('decisionsDateTo').value;
+
+        document.querySelectorAll('#decisionsList .item-row').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const date = row.dataset.date || '';
+            let show = true;
+            if (q && !text.includes(q)) show = false;
+            if (from && date && date < from) show = false;
+            if (to && date && date > to) show = false;
+            row.dataset._filteredOut = show ? '' : '1';
+        });
+        pag.reset();
+    };
+
+    window.clearDecisionsDateFilter = function() {
+        document.getElementById('decisionsDateFrom').value = '';
+        document.getElementById('decisionsDateTo').value = '';
+        applyDecisionsFilter();
+    };
+
+    pag.render();
+})();
+</script>
+{% endblock %}

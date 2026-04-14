@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Meeting Manager{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface-hover: #222632;
+            --border: #2a2e3b;
+            --text: #e4e5e9;
+            --text-muted: #8b8fa3;
+            --accent: #6c5ce7;
+            --accent-hover: #7c6df7;
+            --green: #00b894;
+            --green-bg: rgba(0,184,148,0.12);
+            --orange: #fdcb6e;
+            --orange-bg: rgba(253,203,110,0.12);
+            --red: #e17055;
+            --red-bg: rgba(225,112,85,0.12);
+            --blue: #74b9ff;
+            --blue-bg: rgba(116,185,255,0.12);
+            --radius: 10px;
+            --font: 'DM Sans', -apple-system, sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* ----- Layout ----- */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 240px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 24px 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .sidebar-brand {
+            padding: 0 20px 24px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 16px;
+        }
+
+        .sidebar-brand h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+
+        .sidebar-brand span {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .nav-section {
+            padding: 0 12px;
+            margin-bottom: 8px;
+        }
+
+        .nav-section-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            padding: 8px 12px 6px;
+            font-weight: 600;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 13.5px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.15s ease;
+        }
+
+        .nav-link:hover {
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .nav-link.active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .nav-link .icon {
+            width: 18px;
+            text-align: center;
+            font-size: 15px;
+        }
+
+        .nav-link .badge {
+            margin-left: auto;
+            background: rgba(255,255,255,0.15);
+            padding: 1px 7px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .main-content {
+            margin-left: 240px;
+            flex: 1;
+            padding: 32px 40px;
+            max-width: 1100px;
+        }
+
+        /* ----- Page Header ----- */
+        .page-header {
+            margin-bottom: 28px;
+        }
+
+        .page-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .page-header p {
+            color: var(--text-muted);
+            font-size: 13.5px;
+            margin-top: 4px;
+        }
+
+        /* ----- Stats Grid ----- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+        }
+
+        .stat-card .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 4px;
+            font-family: var(--mono);
+        }
+
+        .stat-card .value.green { color: var(--green); }
+        .stat-card .value.orange { color: var(--orange); }
+        .stat-card .value.blue { color: var(--blue); }
+        .stat-card .value.accent { color: var(--accent); }
+
+        /* ----- Cards / Tables ----- */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .card-body { padding: 0; }
+
+        .item-row {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            transition: background 0.1s;
+        }
+
+        .item-row:last-child { border-bottom: none; }
+        .item-row:hover { background: var(--surface-hover); }
+
+        .item-row .item-content { flex: 1; min-width: 0; }
+
+        .item-row .item-title {
+            font-size: 13.5px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .item-row .item-desc {
+            font-size: 12.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .item-row .item-meta {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .item-row .item-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+            align-items: flex-start;
+        }
+
+        /* ----- Tags ----- */
+        .tag {
+            display: inline-block;
+            padding: 2px 9px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .tag-pending { background: var(--orange-bg); color: var(--orange); }
+        .tag-created { background: var(--green-bg); color: var(--green); }
+        .tag-open { background: var(--blue-bg); color: var(--blue); }
+        .tag-resolved { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+        .tag-cancelled { background: var(--red-bg); color: var(--red); }
+        .tag-code {
+            background: rgba(108,92,231,0.15);
+            color: var(--accent);
+            font-family: var(--mono);
+            font-size: 10.5px;
+        }
+
+        /* ----- Buttons ----- */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 12.5px;
+            font-weight: 600;
+            font-family: var(--font);
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover { background: var(--accent-hover); }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .btn-ghost:hover {
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        .btn-sm { padding: 5px 10px; font-size: 11.5px; }
+
+        .btn-icon {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+        .btn-icon:hover { background: var(--surface-hover); color: var(--text); }
+
+        /* ----- Forms ----- */
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: var(--mono);
+            font-size: 13px;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-hint {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ----- Toast ----- */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--green);
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.25s ease;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.error { background: var(--red); }
+
+        /* ----- Empty State ----- */
+        .empty-state {
+            text-align: center;
+            padding: 48px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon { font-size: 32px; margin-bottom: 12px; }
+        .empty-state p { font-size: 13.5px; }
+
+        /* ----- Misc ----- */
+        .meeting-link {
+            color: var(--blue);
+            text-decoration: none;
+            font-size: 11px;
+        }
+        .meeting-link:hover { text-decoration: underline; }
+
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 16px 0;
+        }
+
+        .flex-between {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .resolved-text { text-decoration: line-through; opacity: 0.5; }
+
+        .search-bar {
+            margin-bottom: 16px;
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 13.5px;
+        }
+
+        .search-bar input:focus { outline: none; border-color: var(--accent); }
+        .search-bar input::placeholder { color: var(--text-muted); }
+
+        /* ----- Date Range Filter ----- */
+        .date-range-filter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .date-range-filter label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .date-range-filter input[type="date"] {
+            padding: 7px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 12.5px;
+            cursor: pointer;
+        }
+
+        .date-range-filter input[type="date"]:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .date-range-filter input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.7);
+            cursor: pointer;
+        }
+
+        .date-range-filter .date-sep {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .date-range-filter .btn-clear-dates {
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-size: 11.5px;
+            font-weight: 600;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .date-range-filter .btn-clear-dates:hover {
+            background: var(--surface-hover);
+            color: var(--text);
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-family: var(--font);
+            font-size: 13.5px;
+            resize: vertical;
+        }
+        textarea:focus { outline: none; border-color: var(--accent); }
+        textarea::placeholder { color: var(--text-muted); }
+
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .filter-btn:hover { background: var(--surface-hover); color: var(--text); }
+        .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        /* ----- Pagination ----- */
+        .pagination {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .pagination button {
+            min-width: 32px;
+            height: 32px;
+            padding: 0 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: var(--font);
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .pagination button:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+        .pagination button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .pagination button:disabled { opacity: 0.3; cursor: default; }
+
+        .pagination .page-info {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin: 0 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <h1>Meeting Manager</h1>
+                <span>Project Hub</span>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Overview</div>
+                <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">
+                    <span class="icon">◉</span> Dashboard
+                </a>
+                <a href="/meetings" class="nav-link {% if '/meetings' in request.path and request.path == '/meetings' %}active{% endif %}">
+                    <span class="icon">◈</span> Meetings
+                </a>
+                <a href="/statistics" class="nav-link {% if request.path == '/statistics' %}active{% endif %}">
+                    <span class="icon">◫</span> Statistics
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">Items</div>
+                <a href="/decisions" class="nav-link {% if request.path == '/decisions' %}active{% endif %}">
+                    <span class="icon">✓</span> Decisions
+                </a>
+                <a href="/jira" class="nav-link {% if request.path == '/jira' %}active{% endif %}">
+                    <span class="icon">◇</span> JIRA Tickets
+                </a>
+                <a href="/clickup" class="nav-link {% if request.path == '/clickup' %}active{% endif %}">
+                    <span class="icon">▸</span> ClickUp Tickets
+                </a>
+                <a href="/topics" class="nav-link {% if request.path == '/topics' %}active{% endif %}">
+                    <span class="icon">◌</span> Topics
+                </a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-section-title">System</div>
+                <a href="/transcriptions" class="nav-link {% if request.path == '/transcriptions' or '/transcriptions/' in request.path %}active{% endif %}">
+                    <span class="icon">⎋</span> Transcriptions
+                </a>
+                <a href="/chat" class="nav-link {% if request.path == '/chat' %}active{% endif %}">
+                    <span class="icon">◈</span> Chat Agent
+                </a>
+                <a href="/settings" class="nav-link {% if request.path == '/settings' %}active{% endif %}">
+                    <span class="icon">⚙</span> Settings
+                </a>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (isError ? ' error' : '');
+            setTimeout(() => t.className = 'toast', 2500);
+        }
+
+        async function copyToClipboard(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('Copied to clipboard');
+            } catch {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Copied to clipboard');
+            }
+        }
+
+        function filterItems(inputId, containerSelector) {
+            const q = document.getElementById(inputId).value.toLowerCase();
+            document.querySelectorAll(containerSelector + ' .item-row').forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(q) ? '' : 'none';
+            });
+        }
+
+        /* ----- Pagination Helper ----- */
+        const PAGE_SIZE = 20;
+
+        function setupPagination(containerId, paginationId, getVisibleRows) {
+            let currentPage = 1;
+
+            function render() {
+                // First hide ALL rows in the container
+                const allRows = Array.from(document.querySelectorAll('#' + containerId + ' .item-row'));
+                allRows.forEach(r => r.style.display = 'none');
+
+                // Get only the rows that pass filters
+                const rows = getVisibleRows ? getVisibleRows() :
+                    allRows.filter(r => !r.dataset._filteredOut);
+                const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+                if (currentPage > totalPages) currentPage = totalPages;
+
+                // Show only current page
+                rows.forEach((row, i) => {
+                    if (i >= (currentPage - 1) * PAGE_SIZE && i < currentPage * PAGE_SIZE) {
+                        row.style.display = '';
+                    }
+                });
+
+                const pagEl = document.getElementById(paginationId);
+                if (!pagEl) return;
+                if (rows.length <= PAGE_SIZE) { pagEl.style.display = 'none'; return; }
+                pagEl.style.display = 'flex';
+
+                let html = `<button ${currentPage <= 1 ? 'disabled' : ''} onclick="window._pag_${paginationId}.go(${currentPage - 1})">‹</button>`;
+                const startPage = Math.max(1, currentPage - 2);
+                const endPage = Math.min(totalPages, startPage + 4);
+                for (let p = startPage; p <= endPage; p++) {
+                    html += `<button class="${p === currentPage ? 'active' : ''}" onclick="window._pag_${paginationId}.go(${p})">${p}</button>`;
+                }
+                html += `<span class="page-info">${rows.length} items</span>`;
+                html += `<button ${currentPage >= totalPages ? 'disabled' : ''} onclick="window._pag_${paginationId}.go(${currentPage + 1})">›</button>`;
+                pagEl.innerHTML = html;
+            }
+
+            window['_pag_' + paginationId] = {
+                go(page) { currentPage = page; render(); },
+                reset() { currentPage = 1; render(); },
+                render
+            };
+
+            return { go(page) { currentPage = page; render(); }, reset() { currentPage = 1; render(); }, render };
+        }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

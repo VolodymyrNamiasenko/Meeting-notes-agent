@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}{{ meeting.title }} — Meeting Manager{% endblock %}
+{% block content %}
+<style>
+    .meeting-summary-bar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+    }
+
+    .summary-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        background: var(--surface);
+    }
+
+    .summary-chip .chip-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .summary-chip .chip-count {
+        font-family: var(--mono);
+        font-size: 13px;
+    }
+
+    .item-status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+    }
+
+    .item-status-indicator .status-icon {
+        font-size: 11px;
+    }
+
+    .status-created-clickup { background: var(--green-bg); color: var(--green); }
+    .status-pending-clickup { background: var(--orange-bg); color: var(--orange); }
+    .status-cancelled-clickup { background: var(--red-bg); color: var(--red); }
+    .status-created-jira { background: var(--green-bg); color: var(--green); }
+    .status-pending-jira { background: var(--orange-bg); color: var(--orange); }
+    .status-cancelled-jira { background: var(--red-bg); color: var(--red); }
+    .status-topic-open { background: var(--blue-bg); color: var(--blue); }
+    .status-topic-resolved { background: rgba(255,255,255,0.06); color: var(--text-muted); }
+
+    .detail-card-header-actions {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .detail-card-header-actions .count-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 11px;
+        font-size: 11px;
+        font-weight: 700;
+        font-family: var(--mono);
+    }
+
+    .clickup-link, .jira-link {
+        font-size: 11px;
+        font-weight: 600;
+        text-decoration: none;
+        margin-left: 6px;
+    }
+
+    .clickup-link { color: var(--green); }
+    .jira-link { color: var(--blue); }
+    .clickup-link:hover, .jira-link:hover { text-decoration: underline; }
+</style>
+
+<div class="page-header">
+    <h2>{{ meeting.title }}</h2>
+    <p>
+        {{ meeting.meeting_date or 'No date' }}
+        {% if meeting.notion_url %}
+         · <a href="{{ meeting.notion_url }}" target="_blank" class="meeting-link">Open in Notion ↗</a>
+        {% endif %}
+    </p>
+</div>
+
+<!-- Summary bar showing counts of all item types -->
+<div class="meeting-summary-bar">
+    {% if decisions %}
+    <div class="summary-chip">
+        <span class="chip-dot" style="background:var(--accent)"></span>
+        <span class="chip-count">{{ decisions|length }}</span> Decision{{ 's' if decisions|length != 1 }}
+    </div>
+    {% endif %}
+    {% if jira_tickets %}
+    <div class="summary-chip">
+        <span class="chip-dot" style="background:var(--orange)"></span>
+        <span class="chip-count">{{ jira_tickets|length }}</span> JIRA
+        {% if item_summary.jira_created > 0 %}
+        <span style="color:var(--green);font-size:11px">· {{ item_summary.jira_created }} created</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if clickup_tickets %}
+    <div class="summary-chip">
+        <span class="chip-dot" style="background:var(--red)"></span>
+        <span class="chip-count">{{ clickup_tickets|length }}</span> ClickUp
+        {% if item_summary.clickup_created > 0 %}
+        <span style="color:var(--green);font-size:11px">· {{ item_summary.clickup_created }} created</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if customer_topics %}
+    <div class="summary-chip">
+        <span class="chip-dot" style="background:var(--blue)"></span>
+        <span class="chip-count">{{ customer_topics|length }}</span> Customer Topics
+        {% if item_summary.customer_topics_resolved > 0 %}
+        <span style="color:var(--green);font-size:11px">· {{ item_summary.customer_topics_resolved }} resolved</span>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if internal_topics %}
+    <div class="summary-chip">
+        <span class="chip-dot" style="background:var(--green)"></span>
+        <span class="chip-count">{{ internal_topics|length }}</span> Internal Topics
+        {% if item_summary.internal_topics_resolved > 0 %}
+        <span style="color:var(--green);font-size:11px">· {{ item_summary.internal_topics_resolved }} resolved</span>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if decisions %}
+<div class="card">
+    <div class="card-header"><h3>Decisions ({{ decisions|length }})</h3></div>
+    <div class="card-body">
+        {% for d in decisions %}
+        <div class="item-row">
+            <span class="tag tag-code">{{ d.decision_code }}</span>
+            <div class="item-content">
+                <div class="item-title">{{ d.summary }}</div>
+                <div class="item-meta"><span>Decided by: {{ d.decided_by }}</span></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if jira_tickets %}
+<div class="card">
+    <div class="card-header">
+        <h3>JIRA Tickets ({{ jira_tickets|length }})</h3>
+        <div class="detail-card-header-actions">
+            {% if item_summary.jira_pending > 0 %}
+            <span class="count-badge" style="background:var(--orange-bg);color:var(--orange)">{{ item_summary.jira_pending }} pending</span>
+            {% endif %}
+            {% if item_summary.jira_created > 0 %}
+            <span class="count-badge" style="background:var(--green-bg);color:var(--green)">{{ item_summary.jira_created }} created</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        {% for t in jira_tickets %}
+        <div class="item-row">
+            {% if t.status == 'created' %}
+            <span class="item-status-indicator status-created-jira">
+                <span class="status-icon">✓</span> Created in JIRA
+            </span>
+            {% elif t.status == 'cancelled' %}
+            <span class="item-status-indicator status-cancelled-jira">
+                <span class="status-icon">✕</span> Cancelled
+            </span>
+            {% else %}
+            <span class="item-status-indicator status-pending-jira">
+                <span class="status-icon">◇</span> Pending
+            </span>
+            {% endif %}
+            <div class="item-content {% if t.status == 'cancelled' %}resolved-text{% endif %}">
+                <div class="item-title">
+                    {{ t.title }}
+                    {% if t.jira_issue_key %}
+                    <a href="https://{{ config.get('jira_domain', '') }}/browse/{{ t.jira_issue_key }}" target="_blank" class="jira-link">{{ t.jira_issue_key }} ↗</a>
+                    {% endif %}
+                </div>
+                <div class="item-desc">{{ t.description }}</div>
+                {% if t.created_in_jira_at %}
+                <div class="item-meta"><span>Created: {{ t.created_in_jira_at[:16] }}</span></div>
+                {% endif %}
+            </div>
+            <div class="item-actions">
+                {% if t.status != 'created' and t.status != 'cancelled' %}
+                <button class="btn btn-primary btn-sm" onclick="createJiraSubtask({{ t.id }}, this)">Create in Jira</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelJiraTicket({{ t.id }})" style="color:var(--red); border-color:var(--red);">✕</button>
+                {% endif %}
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ meeting.title }} | {{ meeting.meeting_date }}]\n{{ t.title }}\n\n{{ t.description }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if clickup_tickets %}
+<div class="card">
+    <div class="card-header">
+        <h3>ClickUp Tickets ({{ clickup_tickets|length }})</h3>
+        <div class="detail-card-header-actions">
+            {% if item_summary.clickup_pending > 0 %}
+            <span class="count-badge" style="background:var(--orange-bg);color:var(--orange)">{{ item_summary.clickup_pending }} pending</span>
+            {% endif %}
+            {% if item_summary.clickup_created > 0 %}
+            <span class="count-badge" style="background:var(--green-bg);color:var(--green)">{{ item_summary.clickup_created }} created</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        {% for t in clickup_tickets %}
+        <div class="item-row">
+            {% if t.status == 'created' %}
+            <span class="item-status-indicator status-created-clickup">
+                <span class="status-icon">✓</span> Created in ClickUp
+            </span>
+            {% elif t.status == 'cancelled' %}
+            <span class="item-status-indicator status-cancelled-clickup">
+                <span class="status-icon">✕</span> Cancelled
+            </span>
+            {% else %}
+            <span class="item-status-indicator status-pending-clickup">
+                <span class="status-icon">▸</span> Pending
+            </span>
+            {% endif %}
+            <div class="item-content {% if t.status == 'cancelled' %}resolved-text{% endif %}">
+                <div class="item-title">
+                    {{ t.title }}
+                    {% if t.clickup_task_id %}
+                    <span class="clickup-link">ClickUp #{{ t.clickup_task_id }}</span>
+                    {% endif %}
+                </div>
+                <div class="item-desc">{{ t.description }}</div>
+                {% if t.created_in_clickup_at %}
+                <div class="item-meta"><span>Created: {{ t.created_in_clickup_at[:16] }}</span></div>
+                {% endif %}
+            </div>
+            <div class="item-actions">
+                {% if t.status == 'pending' %}
+                <button class="btn btn-primary btn-sm" onclick="createClickUp({{ t.id }}, this)">Push to ClickUp</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelClickUp({{ t.id }}, this)" style="color:var(--red); border-color:var(--red);">✕</button>
+                {% endif %}
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ meeting.title }} | {{ meeting.meeting_date }}]\n{{ t.title }}\n\n{{ t.description }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if customer_topics %}
+<div class="card">
+    <div class="card-header">
+        <h3>Topics — Customer ({{ customer_topics|length }})</h3>
+        <div class="detail-card-header-actions">
+            {% if item_summary.customer_topics_open > 0 %}
+            <span class="count-badge" style="background:var(--blue-bg);color:var(--blue)">{{ item_summary.customer_topics_open }} open</span>
+            {% endif %}
+            {% if item_summary.customer_topics_resolved > 0 %}
+            <span class="count-badge" style="background:rgba(255,255,255,0.06);color:var(--text-muted)">{{ item_summary.customer_topics_resolved }} resolved</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        {% for t in customer_topics %}
+        <div class="item-row">
+            {% if t.resolved %}
+            <span class="item-status-indicator status-topic-resolved">
+                <span class="status-icon">✓</span> Resolved
+            </span>
+            {% else %}
+            <span class="item-status-indicator status-topic-open">
+                <span class="status-icon">◌</span> Discussed — Open
+            </span>
+            {% endif %}
+            <div class="item-content {% if t.resolved %}resolved-text{% endif %}">
+                <div class="item-title">{{ t.topic }}</div>
+                <div class="item-desc">{{ t.context }}</div>
+            </div>
+            <div class="item-actions">
+                <button class="btn-icon" onclick="toggleTopic('customer', {{ t.id }})" title="Toggle resolved">{{ '↩' if t.resolved else '✓' }}</button>
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ meeting.title }} | {{ meeting.meeting_date }}]\n{{ t.topic }}\n{{ t.context }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if internal_topics %}
+<div class="card">
+    <div class="card-header">
+        <h3>Topics — Internal ({{ internal_topics|length }})</h3>
+        <div class="detail-card-header-actions">
+            {% if item_summary.internal_topics_open > 0 %}
+            <span class="count-badge" style="background:var(--blue-bg);color:var(--blue)">{{ item_summary.internal_topics_open }} open</span>
+            {% endif %}
+            {% if item_summary.internal_topics_resolved > 0 %}
+            <span class="count-badge" style="background:rgba(255,255,255,0.06);color:var(--text-muted)">{{ item_summary.internal_topics_resolved }} resolved</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body">
+        {% for t in internal_topics %}
+        <div class="item-row">
+            {% if t.resolved %}
+            <span class="item-status-indicator status-topic-resolved">
+                <span class="status-icon">✓</span> Resolved
+            </span>
+            {% else %}
+            <span class="item-status-indicator status-topic-open">
+                <span class="status-icon">◌</span> Discussed — Open
+            </span>
+            {% endif %}
+            <div class="item-content {% if t.resolved %}resolved-text{% endif %}">
+                <div class="item-title">{{ t.topic }}</div>
+                <div class="item-desc">{{ t.context }}</div>
+            </div>
+            <div class="item-actions">
+                <button class="btn-icon" onclick="toggleTopic('internal', {{ t.id }})" title="Toggle resolved">{{ '↩' if t.resolved else '✓' }}</button>
+                <button class="btn-icon" onclick="copyToClipboard(`[{{ meeting.title }} | {{ meeting.meeting_date }}]\n{{ t.topic }}\n{{ t.context }}`)" title="Copy">📋</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function createClickUp(ticketId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    const resp = await fetch('/api/clickup/create-task', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ticket_id: ticketId})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Task created in ClickUp');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error, true);
+        btn.disabled = false;
+        btn.textContent = 'Push to ClickUp';
+    }
+}
+
+async function cancelClickUp(ticketId, btn) {
+    if (!confirm('Cancel this open point?')) return;
+    btn.disabled = true;
+    const resp = await fetch('/api/clickup/cancel', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ticket_id: ticketId})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Open point cancelled');
+        setTimeout(() => location.reload(), 800);
+    } else {
+        showToast(data.error, true);
+        btn.disabled = false;
+    }
+}
+
+async function createJiraSubtask(ticketId, btn) {
+    if (btn) btn.disabled = true;
+    try {
+        const resp = await fetch('/api/jira/create-subtask', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ ticket_id: ticketId })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            showToast('Sub-task created: ' + data.issue_key);
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(data.error || 'Failed to create', true);
+            if (btn) btn.disabled = false;
+        }
+    } catch (e) {
+        showToast('Error: ' + e.message, true);
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function cancelJiraTicket(ticketId) {
+    const resp = await fetch('/api/jira/cancel', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ticket_id: ticketId })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+        showToast('Ticket cancelled');
+        setTimeout(() => location.reload(), 500);
+    } else {
+        showToast(data.error || 'Failed', true);
+    }
+}
+
+async function toggleTopic(type, id) {
+    await fetch(`/api/topics/${type}/${id}/toggle`, { method: 'POST' });
+    location.reload();
+}
+</script>
+{% endblock %}

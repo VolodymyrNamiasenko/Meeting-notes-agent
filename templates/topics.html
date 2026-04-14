@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Topics — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>Discussion Topics</h2>
+    <p>Open items for customer and internal meetings</p>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchTopics" placeholder="Search topics..." oninput="onSearchTopics()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="topicsDateFrom" onchange="onSearchTopics()">
+    <span class="date-sep">→</span>
+    <input type="date" id="topicsDateTo" onchange="onSearchTopics()">
+    <button class="btn-clear-dates" onclick="clearTopicsDateFilter()">Clear</button>
+</div>
+
+<div class="filter-bar">
+    <button class="filter-btn active" onclick="filterTopics('all', this)">All</button>
+    <button class="filter-btn" onclick="filterTopics('open', this)">Open</button>
+    <button class="filter-btn" onclick="filterTopics('resolved', this)">Resolved</button>
+</div>
+
+<div class="topics-container">
+    <div class="card">
+        <div class="card-header">
+            <h3>Customer Topics ({{ customer_topics|length }})</h3>
+            <button class="btn btn-ghost btn-sm" onclick="copyAllOpen('customer')">📋 Copy all open</button>
+        </div>
+        <div class="card-body" id="customerTopics">
+            {% for t in customer_topics %}
+            <div class="item-row" data-resolved="{{ t.resolved }}" data-date="{{ t.meeting_date or '' }}">
+                <span class="tag {{ 'tag-resolved' if t.resolved else 'tag-open' }}">{{ 'resolved' if t.resolved else 'open' }}</span>
+                <div class="item-content {% if t.resolved %}resolved-text{% endif %}">
+                    <div class="item-title">{{ t.topic }}</div>
+                    <div class="item-desc">{{ t.context }}</div>
+                    <div class="item-meta">
+                        <a href="/meetings/{{ t.meeting_id }}" class="meeting-link">{{ t.meeting_title }}</a>
+                        <span>{{ t.meeting_date }}</span>
+                    </div>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-icon" onclick="toggleTopic('customer', {{ t.id }})" title="Toggle resolved">{{ '↩' if t.resolved else '✓' }}</button>
+                    <button class="btn-icon" onclick="copyToClipboard(`[{{ t.meeting_title }} | {{ t.meeting_date }}]\n{{ t.topic }} — {{ t.context }}`)" title="Copy">📋</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state"><p>No customer topics.</p></div>
+            {% endfor %}
+        </div>
+        <div class="pagination" id="customerPag"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3>Internal Topics ({{ internal_topics|length }})</h3>
+            <button class="btn btn-ghost btn-sm" onclick="copyAllOpen('internal')">📋 Copy all open</button>
+        </div>
+        <div class="card-body" id="internalTopics">
+            {% for t in internal_topics %}
+            <div class="item-row" data-resolved="{{ t.resolved }}" data-date="{{ t.meeting_date or '' }}">
+                <span class="tag {{ 'tag-resolved' if t.resolved else 'tag-open' }}">{{ 'resolved' if t.resolved else 'open' }}</span>
+                <div class="item-content {% if t.resolved %}resolved-text{% endif %}">
+                    <div class="item-title">{{ t.topic }}</div>
+                    <div class="item-desc">{{ t.context }}</div>
+                    <div class="item-meta">
+                        <a href="/meetings/{{ t.meeting_id }}" class="meeting-link">{{ t.meeting_title }}</a>
+                        <span>{{ t.meeting_date }}</span>
+                    </div>
+                </div>
+                <div class="item-actions">
+                    <button class="btn-icon" onclick="toggleTopic('internal', {{ t.id }})" title="Toggle resolved">{{ '↩' if t.resolved else '✓' }}</button>
+                    <button class="btn-icon" onclick="copyToClipboard(`[{{ t.meeting_title }} | {{ t.meeting_date }}]\n{{ t.topic }} — {{ t.context }}`)" title="Copy">📋</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state"><p>No internal topics.</p></div>
+            {% endfor %}
+        </div>
+        <div class="pagination" id="internalPag"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let topicFilter = 'all';
+let topicSearch = '';
+
+function getVisibleRows(containerId) {
+    const from = document.getElementById('topicsDateFrom').value;
+    const to = document.getElementById('topicsDateTo').value;
+    return Array.from(document.querySelectorAll('#' + containerId + ' .item-row')).filter(row => {
+        const isResolved = row.dataset.resolved === '1';
+        if (topicFilter === 'open' && isResolved) return false;
+        if (topicFilter === 'resolved' && !isResolved) return false;
+        if (topicSearch && !row.textContent.toLowerCase().includes(topicSearch)) return false;
+        const date = row.dataset.date || '';
+        if (from && date && date < from) return false;
+        if (to && date && date > to) return false;
+        return true;
+    });
+}
+
+const custPag = setupPagination('customerTopics', 'customerPag', () => getVisibleRows('customerTopics'));
+const intPag = setupPagination('internalTopics', 'internalPag', () => getVisibleRows('internalTopics'));
+
+function refreshAll() {
+    custPag.reset();
+    intPag.reset();
+}
+
+async function toggleTopic(type, id) {
+    await fetch(`/api/topics/${type}/${id}/toggle`, { method: 'POST' });
+    location.reload();
+}
+
+function filterTopics(status, btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    topicFilter = status;
+    refreshAll();
+}
+
+function onSearchTopics() {
+    topicSearch = document.getElementById('searchTopics').value.toLowerCase();
+    refreshAll();
+}
+
+function clearTopicsDateFilter() {
+    document.getElementById('topicsDateFrom').value = '';
+    document.getElementById('topicsDateTo').value = '';
+    refreshAll();
+}
+
+function copyAllOpen(type) {
+    const container = type === 'customer' ? 'customerTopics' : 'internalTopics';
+    const rows = document.querySelectorAll(`#${container} .item-row[data-resolved="0"]`);
+    let text = '';
+    let i = 1;
+    rows.forEach(row => {
+        const title = row.querySelector('.item-title').textContent.trim();
+        const desc = row.querySelector('.item-desc').textContent.trim();
+        const meetingLink = row.querySelector('.meeting-link');
+        const meetingName = meetingLink ? meetingLink.textContent.trim() : '';
+        const dateEl = row.querySelector('.item-meta span:last-child');
+        const meetingDate = dateEl ? dateEl.textContent.trim() : '';
+        const ref = meetingName ? `[${meetingName} | ${meetingDate}] ` : '';
+        text += `${i}. ${ref}${title} — ${desc}\n`;
+        i++;
+    });
+    if (text) {
+        copyToClipboard(text.trim());
+    } else {
+        showToast('No open topics to copy');
+    }
+}
+
+custPag.render();
+intPag.render();
+</script>
+{% endblock %}

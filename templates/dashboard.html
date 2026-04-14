@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header flex-between">
+    <div>
+        <h2>Dashboard</h2>
+        <p>Overview of all meeting data</p>
+    </div>
+    <button class="btn btn-primary" onclick="syncNotion()" id="syncBtn">
+        ↻ Sync from Notion
+    </button>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Meetings</div>
+        <div class="value accent">{{ stats.meetings }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Decisions</div>
+        <div class="value blue">{{ stats.decisions }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">JIRA Pending</div>
+        <div class="value orange">{{ stats.jira_pending }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">JIRA Created</div>
+        <div class="value green">{{ stats.jira_created }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">JIRA Cancelled</div>
+        <div class="value red">{{ stats.jira_cancelled }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">JIRA Created</div>
+        <div class="value green">{{ stats.jira_created }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">JIRA Cancelled</div>
+        <div class="value" style="color:var(--red);">{{ stats.jira_cancelled }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">ClickUp Pending</div>
+        <div class="value orange">{{ stats.clickup_pending }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">ClickUp Created</div>
+        <div class="value green">{{ stats.clickup_created }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">ClickUp Cancelled</div>
+        <div class="value" style="color:var(--red);">{{ stats.clickup_cancelled }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Customer Topics Open</div>
+        <div class="value orange">{{ stats.customer_topics_open }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Internal Topics Open</div>
+        <div class="value orange">{{ stats.internal_topics_open }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3>Recent Meetings</h3>
+        <a href="/meetings" class="btn btn-ghost btn-sm">View all →</a>
+    </div>
+    <div class="card-body">
+        {% if recent_meetings %}
+            {% for m in recent_meetings %}
+            <a href="/meetings/{{ m.id }}" class="item-row" style="text-decoration:none; color:inherit;">
+                <div class="item-content">
+                    <div class="item-title">{{ m.title }}</div>
+                    <div class="item-meta">
+                        <span>{{ m.meeting_date or 'No date' }}</span>
+                        {% if m.notion_url %}
+                        <a href="{{ m.notion_url }}" target="_blank" class="meeting-link" onclick="event.stopPropagation();">Open in Notion ↗</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <div class="icon">◈</div>
+                <p>No meetings yet. Click "Sync from Notion" to import.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function syncNotion() {
+    const btn = document.getElementById('syncBtn');
+    btn.disabled = true;
+    btn.textContent = '⟳ Syncing...';
+
+    try {
+        const resp = await fetch('/api/sync-notion', { method: 'POST' });
+        const data = await resp.json();
+        if (data.error) {
+            showToast(data.error, true);
+        } else {
+            showToast(`Imported ${data.imported} meetings (${data.skipped} already existed)`);
+            setTimeout(() => location.reload(), 1200);
+        }
+    } catch (e) {
+        showToast('Sync failed: ' + e.message, true);
+    }
+    btn.disabled = false;
+    btn.textContent = '↻ Sync from Notion';
+}
+</script>
+{% endblock %}

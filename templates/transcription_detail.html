@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ transcription.title }} — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
+        <a href="/transcriptions" style="color:var(--text-muted); text-decoration:none; font-size:13px;">← Back to Transcriptions</a>
+    </div>
+    <h2>{{ transcription.title }}</h2>
+    <p>
+        {{ transcription.meeting_date or 'No date' }}
+        {% if transcription.notion_url %}
+         · <a href="{{ transcription.notion_url }}" target="_blank" class="meeting-link">Open in Notion ↗</a>
+        {% endif %}
+    </p>
+</div>
+
+<div class="card">
+    <div class="card-header flex-between">
+        <h3>Transcription Content</h3>
+        <button class="btn btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('transcriptContent').innerText)">Copy</button>
+    </div>
+    <div class="card-body" style="padding:20px;">
+        <div id="transcriptContent" style="white-space:pre-wrap; font-size:13.5px; line-height:1.7; color:var(--text);">{{ transcription.content or 'No content available.' }}</div>
+    </div>
+</div>
+{% endblock %}

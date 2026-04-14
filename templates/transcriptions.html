@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Transcriptions — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header flex-between">
+    <div>
+        <h2>Meeting Transcriptions</h2>
+        <p>{{ transcriptions|length }} transcription{{ 's' if transcriptions|length != 1 }} synced from Notion</p>
+    </div>
+    <button class="btn btn-primary" onclick="syncTranscriptions()" id="syncTransBtn">
+        ↻ Sync Transcriptions
+    </button>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchTranscriptions" placeholder="Search transcriptions..." oninput="filterAndPaginate()">
+</div>
+
+<div class="date-range-filter">
+    <label>Date Range</label>
+    <input type="date" id="transDateFrom" onchange="filterAndPaginate()">
+    <span class="date-sep">→</span>
+    <input type="date" id="transDateTo" onchange="filterAndPaginate()">
+    <button class="btn-clear-dates" onclick="clearTransDateFilter()">Clear</button>
+</div>
+
+<div class="card">
+    <div class="card-body" id="transcriptionsContainer">
+        {% if transcriptions %}
+            {% for t in transcriptions %}
+            <div class="item-row" data-date="{{ t.meeting_date or '' }}" data-searchable="{{ t.title|lower }} {{ t.meeting_date|lower if t.meeting_date else '' }} {{ t.content|lower if t.content else '' }}">
+                <div class="item-content">
+                    <div class="item-title">
+                        <a href="/transcriptions/{{ t.id }}" style="color:var(--text); text-decoration:none;">{{ t.title }}</a>
+                    </div>
+                    <div class="item-desc">
+                        {{ t.content[:200] }}{{ '...' if t.content and t.content|length > 200 else '' }}
+                    </div>
+                    <div class="item-meta">
+                        <span>{{ t.meeting_date or 'No date' }}</span>
+                        <span>Imported {{ t.imported_at[:10] if t.imported_at else '' }}</span>
+                        {% if t.notion_url %}
+                        <a href="{{ t.notion_url }}" target="_blank" class="meeting-link">Open in Notion ↗</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <div class="icon">⎋</div>
+                <p>No transcriptions yet. Configure the Transcriptions Database ID in Settings, then click "Sync Transcriptions".</p>
+            </div>
+        {% endif %}
+    </div>
+    <div class="pagination" id="transcriptionsPag"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterAndPaginate() {
+    const q = document.getElementById('searchTranscriptions').value.toLowerCase();
+    const from = document.getElementById('transDateFrom').value;
+    const to = document.getElementById('transDateTo').value;
+
+    document.querySelectorAll('#transcriptionsContainer .item-row').forEach(row => {
+        const searchable = row.dataset.searchable || row.textContent.toLowerCase();
+        const date = row.dataset.date || '';
+        let show = searchable.includes(q);
+        if (from && date && date < from) show = false;
+        if (to && date && date > to) show = false;
+        row.dataset._filteredOut = show ? '' : '1';
+    });
+    if (window._pag_transcriptionsPag) window._pag_transcriptionsPag.reset();
+}
+
+function clearTransDateFilter() {
+    document.getElementById('transDateFrom').value = '';
+    document.getElementById('transDateTo').value = '';
+    filterAndPaginate();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const pag = setupPagination('transcriptionsContainer', 'transcriptionsPag', () => {
+        return Array.from(document.querySelectorAll('#transcriptionsContainer .item-row'))
+            .filter(r => !r.dataset._filteredOut);
+    });
+    pag.render();
+});
+
+async function syncTranscriptions() {
+    const btn = document.getElementById('syncTransBtn');
+    btn.disabled = true;
+    btn.textContent = '⟳ Syncing...';
+
+    try {
+        const resp = await fetch('/api/sync-transcriptions', { method: 'POST' });
+        const data = await resp.json();
+        if (data.error) {
+            showToast(data.error, true);
+        } else {
+            showToast(`Imported ${data.imported} transcriptions (${data.skipped} already existed)`);
+            setTimeout(() => location.reload(), 1200);
+        }
+    } catch (e) {
+        showToast('Sync failed: ' + e.message, true);
+    }
+    btn.disabled = false;
+    btn.textContent = '↻ Sync Transcriptions';
+}
+</script>
+{% endblock %}
