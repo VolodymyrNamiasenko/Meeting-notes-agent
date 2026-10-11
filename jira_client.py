@@ -35,7 +35,7 @@ class JiraClient:
                 "issuetype": {"name": issue_type},
             }
         }
-        resp = requests.post(url, headers=self.headers, json=payload)
+        resp = requests.post(url, headers=self.headers, json=payload, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

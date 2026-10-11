@@ -2,6 +2,7 @@ import os
 import json
 import re
 import uuid
+import secrets
 import requests as http_requests
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
@@ -12,7 +13,8 @@ from clickup_client import ClickUpClient
 from jira_client import JiraClient
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "meeting-manager-secret-key-change-me")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict", MAX_CONTENT_LENGTH=20 * 1024 * 1024)
 
 # ----- Config -----
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
@@ -68,6 +70,7 @@ def meeting_detail(meeting_id):
     db = get_db()
     meeting = db.execute("SELECT * FROM meetings WHERE id=?", (meeting_id,)).fetchone()
     if not meeting:
+        db.close()
         return "Meeting not found", 404
 
     data = {
@@ -174,8 +177,76 @@ def statistics_page():
         FROM meetings m
         ORDER BY m.meeting_date DESC
     """).fetchall()
+
+    # Derive meeting duration (minutes) from matching transcription content.
+    # Transcripts contain HH:MM:SS timestamps per speaker turn; the max timestamp
+    # is taken as the meeting length.
+    transcriptions = db.execute(
+        "SELECT id, title, meeting_date, content FROM transcriptions WHERE content IS NOT NULL"
+    ).fetchall()
+
+    ts_rows = []
+    for t in transcriptions:
+        content = t["content"] or ""
+        matches = re.findall(r"(\d{1,2}):(\d{2}):(\d{2})", content)
+        if not matches:
+            continue
+        max_secs = max(int(h) * 3600 + int(mm) * 60 + int(s) for h, mm, s in matches)
+        ts_rows.append({
+            "id": t["id"],
+            "title": (t["title"] or "").lower(),
+            "date": (t["meeting_date"] or "")[:10],
+            "minutes": max_secs / 60.0,
+            "used": False,
+        })
+
+    def _words(s):
+        return set(re.findall(r"\w{4,}", (s or "").lower()))
+
+    # Pass 1: compute best-candidate overlap per meeting, then greedily assign
+    # each transcription to the meeting with the highest title-word overlap on
+    # that date. This prevents the same transcription being counted multiple
+    # times when several meetings share a date.
+    meetings_by_date = {}
+    for idx, m in enumerate(meetings):
+        d = (m["meeting_date"] or "")[:10]
+        meetings_by_date.setdefault(d, []).append(idx)
+
+    duration_by_idx = {i: 0.0 for i in range(len(meetings))}
+    for date_key, idx_list in meetings_by_date.items():
+        if not date_key:
+            continue
+        candidates = [t for t in ts_rows if t["date"] == date_key]
+        if not candidates:
+            continue
+        # Build (meeting_idx, transcription, overlap) tuples, sort desc by overlap
+        pairs = []
+        for i in idx_list:
+            mw = _words(meetings[i]["title"])
+            for t in candidates:
+                ov = len(mw & _words(t["title"]))
+                pairs.append((ov, i, t))
+        pairs.sort(key=lambda x: -x[0])
+
+        assigned_meetings = set()
+        for ov, i, t in pairs:
+            if t["used"] or i in assigned_meetings:
+                continue
+            # Require overlap > 0, OR allow zero-overlap only if exactly one
+            # meeting and one transcription share the date.
+            if ov > 0 or (len(idx_list) == 1 and len(candidates) == 1):
+                duration_by_idx[i] = t["minutes"]
+                t["used"] = True
+                assigned_meetings.add(i)
+
+    meetings_out = []
+    for i, m in enumerate(meetings):
+        d = dict(m)
+        d["duration_minutes"] = round(duration_by_idx[i], 1)
+        meetings_out.append(d)
+
     db.close()
-    return render_template("statistics.html", meetings=meetings)
+    return render_template("statistics.html", meetings=meetings_out)
 
 
 @app.route("/settings")
@@ -1026,6 +1097,8 @@ def chat_clear():
     return jsonify({"ok": True})
 
 
+# Initialize for both the CLI and WSGI imports (e.g. gunicorn app:app).
+init_db()
+
 if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, port=5000)
+    app.run(host="127.0.0.1", debug=os.getenv("FLASK_DEBUG") == "1", port=int(os.getenv("PORT", "5001")))

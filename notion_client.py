@@ -22,7 +22,7 @@ class NotionClient:
         if start_cursor:
             payload["start_cursor"] = start_cursor
 
-        resp = requests.post(url, headers=self.headers, json=payload)
+        resp = requests.post(url, headers=self.headers, json=payload, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -43,7 +43,7 @@ class NotionClient:
     def get_page(self, page_id: str) -> dict:
         """Get page metadata."""
         url = f"{NOTION_API_URL}/pages/{page_id}"
-        resp = requests.get(url, headers=self.headers)
+        resp = requests.get(url, headers=self.headers, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -57,7 +57,7 @@ class NotionClient:
             if cursor:
                 url += f"&start_cursor={cursor}"
 
-            resp = requests.get(url, headers=self.headers)
+            resp = requests.get(url, headers=self.headers, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             all_blocks.extend(data.get("results", []))

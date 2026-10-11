@@ -238,7 +238,8 @@ const allMeetings = [
         jira: {{ m.jira_count }},
         clickup: {{ m.clickup_count }},
         customerTopics: {{ m.customer_topic_count }},
-        internalTopics: {{ m.internal_topic_count }}
+        internalTopics: {{ m.internal_topic_count }},
+        durationMinutes: {{ m.duration_minutes or 0 }}
     },
     {% endfor %}
 ];
@@ -283,18 +284,22 @@ function renderStats(meetings) {
     const totalClickUp = meetings.reduce((s,m) => s+m.clickup, 0);
     const totalCustTopics = meetings.reduce((s,m) => s+m.customerTopics, 0);
     const totalIntTopics = meetings.reduce((s,m) => s+m.internalTopics, 0);
+    const totalMinutes = meetings.reduce((s,m) => s + (m.durationMinutes || 0), 0);
+    const totalHours = totalMinutes / 60;
 
     // Group by day
     const days = {};
     meetings.forEach(m => {
-        if (!days[m.date]) days[m.date] = {count:0, dow: getDow(m.date), decisions:0, jira:0, clickup:0};
+        if (!days[m.date]) days[m.date] = {count:0, dow: getDow(m.date), decisions:0, jira:0, clickup:0, minutes:0};
         days[m.date].count++;
         days[m.date].decisions += m.decisions;
         days[m.date].jira += m.jira;
         days[m.date].clickup += m.clickup;
+        days[m.date].minutes += (m.durationMinutes || 0);
     });
     const dayEntries = Object.entries(days).sort((a,b) => a[0].localeCompare(b[0]));
     const avgPerDay = totalMeetings / dayEntries.length;
+    const avgHoursPerDay = totalHours / dayEntries.length;
     const totalItems = totalDecisions + totalJira + totalClickUp + totalCustTopics + totalIntTopics;
     const avgItems = totalMeetings ? (totalItems / totalMeetings).toFixed(1) : '0';
 
@@ -302,6 +307,8 @@ function renderStats(meetings) {
     document.getElementById('statsKpis').innerHTML = `
         <div class="stats-kpi"><div class="stats-kpi-label">Total Meetings</div><div class="stats-kpi-value" style="color:var(--accent)">${totalMeetings}</div><div class="stats-kpi-sub">over ${dayEntries.length} working days</div></div>
         <div class="stats-kpi"><div class="stats-kpi-label">Avg / Day</div><div class="stats-kpi-value" style="color:var(--blue)">${avgPerDay.toFixed(1)}</div><div class="stats-kpi-sub">meetings per day</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">Total Hours</div><div class="stats-kpi-value" style="color:var(--accent)">${totalHours.toFixed(1)}h</div><div class="stats-kpi-sub">in selected range</div></div>
+        <div class="stats-kpi"><div class="stats-kpi-label">Avg Hours / Day</div><div class="stats-kpi-value" style="color:var(--blue)">${avgHoursPerDay.toFixed(1)}h</div><div class="stats-kpi-sub">meeting hours per day</div></div>
         <div class="stats-kpi"><div class="stats-kpi-label">Decisions</div><div class="stats-kpi-value" style="color:var(--green)">${totalDecisions}</div><div class="stats-kpi-sub">total decisions recorded</div></div>
         <div class="stats-kpi"><div class="stats-kpi-label">JIRA Tickets</div><div class="stats-kpi-value" style="color:var(--orange)">${totalJira}</div><div class="stats-kpi-sub">open points for customer</div></div>
         <div class="stats-kpi"><div class="stats-kpi-label">ClickUp Tickets</div><div class="stats-kpi-value" style="color:var(--red)">${totalClickUp}</div><div class="stats-kpi-sub">open points for dev team</div></div>
@@ -335,6 +342,35 @@ function renderStats(meetings) {
         card.className = 'stats-chart-card';
         card.innerHTML = `
             <div class="stats-chart-title"><span class="dot" style="background:var(--accent)"></span> Meetings per Day</div>
+            <svg viewBox="0 0 ${W} ${H}" width="100%">${bars}</svg>
+        `;
+        chartsEl.appendChild(card);
+    }
+
+    // Chart 1b: Meeting Hours per Day bar chart
+    {
+        const W=520, H=220, padL=50, padR=20, padT=20, padB=50;
+        const cw=W-padL-padR, ch=H-padT-padB;
+        const maxHours = Math.max(...dayEntries.map(d=>d[1].minutes/60), 0.1);
+        const barW = cw/dayEntries.length * 0.6;
+        const gap = cw/dayEntries.length;
+
+        let bars = '';
+        dayEntries.forEach(([date, info], i) => {
+            const x = padL + i*gap + gap/2;
+            const hours = info.minutes/60;
+            const hBar = (hours/maxHours)*ch*0.9;
+            bars += `<g class="stats-bar-group">
+                <rect x="${x - barW/2}" y="${padT+ch-hBar}" width="${barW}" height="${hBar}" fill="var(--blue)" opacity="0.85"/>
+                <text x="${x}" y="${H-padB+16}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${info.dow} ${date.slice(5)}</text>
+                <text x="${x}" y="${padT+ch-hBar-5}" text-anchor="middle" fill="var(--blue)" font-size="10" font-weight="600">${hours.toFixed(1)}h</text>
+            </g>`;
+        });
+
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+        card.innerHTML = `
+            <div class="stats-chart-title"><span class="dot" style="background:var(--blue)"></span> Meeting Hours per Day</div>
             <svg viewBox="0 0 ${W} ${H}" width="100%">${bars}</svg>
         `;
         chartsEl.appendChild(card);
@@ -449,15 +485,43 @@ function renderStats(meetings) {
         chartsEl.appendChild(card);
     }
 
+    // Chart 4b: Daily meeting load by HOURS (horizontal bars)
+    {
+        const maxDayHours = Math.max(...dayEntries.map(d=>d[1].minutes/60), 0.1);
+        const card = document.createElement('div');
+        card.className = 'stats-chart-card';
+
+        let hbars = '';
+        dayEntries.forEach(([date, info]) => {
+            const hours = info.minutes/60;
+            const pct = (hours / maxDayHours) * 100;
+            hbars += `<div class="stats-hbar">
+                <div class="stats-hbar-label">${info.dow} ${date.slice(5)}</div>
+                <div class="stats-hbar-track"><div class="stats-hbar-fill" style="width:${pct}%;background:linear-gradient(90deg,var(--blue),var(--green))">${hours.toFixed(1)}h</div></div>
+            </div>`;
+        });
+
+        card.innerHTML = `
+            <div class="stats-chart-title"><span class="dot" style="background:var(--green)"></span> Daily Meeting Load by Hours</div>
+            ${hbars}
+        `;
+        chartsEl.appendChild(card);
+    }
+
     // Table: All meetings
     const extrasEl = document.getElementById('statsExtras');
     {
         let rows = meetings.map(m => {
             const totalItems = m.decisions + m.jira + m.clickup + m.customerTopics + m.internalTopics;
+            const hours = (m.durationMinutes || 0) / 60;
+            const hoursCell = hours > 0
+                ? `<span style="font-family:var(--mono);color:var(--blue);font-weight:600">${hours.toFixed(1)}h</span>`
+                : `<span style="color:var(--text-muted)">—</span>`;
             return `<tr>
                 <td>${m.date}</td>
                 <td>${getDow(m.date)}</td>
                 <td style="white-space:normal;max-width:300px"><a href="/meetings/${m.id}" style="color:var(--text);text-decoration:none;">${m.title}</a></td>
+                <td>${hoursCell}</td>
                 <td>${m.decisions}</td>
                 <td>${m.jira}</td>
                 <td>${m.clickup}</td>
@@ -470,7 +534,7 @@ function renderStats(meetings) {
             <div class="stats-table-card">
                 <div class="stats-chart-title"><span class="dot" style="background:var(--accent)"></span> All Meetings Detail</div>
                 <table class="stats-table">
-                    <thead><tr><th>Date</th><th>Day</th><th>Meeting Title</th><th>Decisions</th><th>JIRA</th><th>ClickUp</th><th>Topics</th><th>Total</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Day</th><th>Meeting Title</th><th>Hours</th><th>Decisions</th><th>JIRA</th><th>ClickUp</th><th>Topics</th><th>Total</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </div>
