@@ -36,11 +36,14 @@ class ParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {"MEETING_DB_PATH": directory + "/test.db"}):
                 import app
-                client = app.app.test_client()
-                self.assertEqual(client.get("/").status_code, 200)
-                self.assertEqual(client.get("/meetings/999").status_code, 404)
-                self.assertEqual(client.get("/chat").status_code, 200)
-                self.assertNotEqual(app.app.secret_key, "meeting-manager-secret-key-change-me")
+                import database
+                with patch.object(database, "DB_PATH", directory + "/test.db"):
+                    database.init_db()
+                    client = app.app.test_client()
+                    self.assertEqual(client.get("/").status_code, 200)
+                    self.assertEqual(client.get("/meetings/999").status_code, 404)
+                    self.assertEqual(client.get("/chat").status_code, 200)
+                    self.assertNotEqual(app.app.secret_key, "meeting-manager-secret-key-change-me")
 
 
 if __name__ == "__main__":

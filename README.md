@@ -1,6 +1,15 @@
-# Meeting Manager
+# Meeting Notes Manager · Personal workflow
 
-A local Flask application for organizing Notion meeting notes and transcripts into decisions, Jira/ClickUp tickets, and customer/internal discussion topics.
+A local Flask/SQLite application for reviewing structured meeting notes and transcripts imported from Notion. It connects a personal AI-assisted meeting workflow to searchable decisions, discussion topics and human-triggered Jira/ClickUp task creation.
+
+## Where this app fits
+
+1. **Upstream, outside this repository:** record/transcribe a meeting (for example with Sembly AI) and prepare structured notes in a Notion database. This app does not record audio, transcribe it or call a Sembly API.
+2. **Inside this repository:** import notes/transcripts from configured Notion databases; parse decisions, ticket drafts and topics into SQLite.
+3. **Human review:** inspect the imported drafts and source meeting before choosing to create a Jira subtask or ClickUp task. Synchronizing notes does not automatically create remote tickets.
+4. **Optional Claude chat:** send a question and selected/recent transcript context to Anthropic. Review the response against the original transcript.
+
+The supported workflow is personal tooling, distinct from a professional ERP/MES support pilot. The repository does not contain client meeting records or pilot results. See [capability evidence and a synthetic walkthrough](docs/PORTFOLIO.md).
 
 ## Features
 
@@ -8,7 +17,7 @@ A local Flask application for organizing Notion meeting notes and transcripts in
 - Parse structured Markdown, including mixed heading levels.
 - Browse meeting history, decisions, topics, transcripts and activity statistics.
 - Draft or create Jira/ClickUp items from the interface.
-- Search transcript content through a configurable local model workflow.
+- Ask Claude questions using imported transcript context, with persisted local chat sessions.
 
 Statistics and generated answers depend on imported data quality; they are not independently verified summaries.
 
@@ -25,9 +34,15 @@ python app.py
 
 Open http://localhost:5001. Set `PORT` to change it. Debug mode is off unless `FLASK_DEBUG=1`. Set a private, stable `FLASK_SECRET_KEY` if sessions should survive restarts or multiple server instances.
 
-In Settings, configure your Notion token and database ID. The integration must be explicitly connected to the database. Jira and ClickUp credentials are optional; verify their target project/list before creating items. API requests have bounded timeouts.
+In Settings, configure your Notion token and notes database ID; configure a separate transcriptions database ID to import transcripts. The integration must be explicitly connected to both databases. The client uses Notion API version `2022-06-28` and its database-query endpoint; live compatibility and permissions must be checked with your own integration, especially for newer multi-source database setups.
+
+Jira and ClickUp credentials are optional; verify the Jira parent key and ClickUp list before creating items. Anthropic chat is optional and requires an API key; API usage may incur charges. Chat uses `claude-sonnet-4-20250514` by default, configurable through `ANTHROPIC_MODEL`. Availability depends on your account. There is no local Ollama inference in this app.
+
+No credentials are needed to start the empty app, browse its pages or run the mocked tests. For a safe walkthrough, put [the invented notes](examples/synthetic_meeting_notes.md) in a test Notion page and follow `docs/PORTFOLIO.md`. Do not use client data to demonstrate the public repository.
 
 `config.json` contains credentials, and `meeting_manager.db` contains private notes/transcripts. Keep both out of Git and back them up privately. `MEETING_DB_PATH` can select another database.
+
+When chat context is enabled, transcript text leaves your computer for the Anthropic API; chat history is sent too. Up to 80,000 characters of context may be selected and long transcripts may be truncated or omitted. Only use data you are authorized to send. The app does not write full API payloads to debug files or print transcript titles/message excerpts by default. Chat content still persists locally in SQLite.
 
 ## Notes format
 

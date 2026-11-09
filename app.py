@@ -445,6 +445,10 @@ def create_clickup_task():
         db.close()
         return jsonify({"error": "Ticket not found"}), 404
 
+    if (ticket["status"] or "pending") != "pending":
+        db.close()
+        return jsonify({"error": "Only pending drafts can be sent. Review the existing item or cancellation."}), 409
+
     try:
         client = ClickUpClient(clickup_token)
         desc = ticket["description"] or ""
@@ -536,6 +540,10 @@ def create_jira_subtask():
         db.close()
         return jsonify({"error": "Ticket not found"}), 404
 
+    if (ticket["status"] or "pending") != "pending":
+        db.close()
+        return jsonify({"error": "Only pending drafts can be sent. Review the existing item or cancellation."}), 409
+
     try:
         # Build the subtask payload
         base_url = f"https://{jira_domain}/rest/api/3"
@@ -590,6 +598,7 @@ def create_jira_subtask():
 
         if resp.status_code not in (200, 201):
             error_detail = resp.text[:500]
+            db.close()
             return jsonify({"error": f"Jira API error ({resp.status_code}): {error_detail}"}), 500
 
         result = resp.json()
@@ -736,15 +745,12 @@ def _find_meeting_in_message(user_message, db):
     ).fetchall()
 
     if not transcriptions:
-        print(f"[MATCH DEBUG] No transcriptions in database")
         return None
 
     msg_lower = user_message.lower().strip()
 
     # Extract all YYYY-MM-DD dates from user message
     msg_dates = re.findall(r'\d{4}-\d{2}-\d{2}', user_message)
-    print(f"[MATCH DEBUG] Dates found in message: {msg_dates}")
-    print(f"[MATCH DEBUG] Total transcriptions to check: {len(transcriptions)}")
 
     best_match_id = None
     best_score = 0
@@ -772,14 +778,10 @@ def _find_meeting_in_message(user_message, db):
         if date_found:
             score += 2
 
-        if score > 0:
-            print(f"[MATCH DEBUG]   '{title}' | stored={raw_date} → short={stored_date_short} | title_match={title_found} date_match={date_found} → score={score}")
-
         if score > best_score:
             best_score = score
             best_match_id = t["id"]
 
-    print(f"[MATCH DEBUG] Best score: {best_score} (need >= 4 for match)")
 
     # Require both title AND date to match (score >= 4)
     if best_score >= 4 and best_match_id:
@@ -867,9 +869,7 @@ def chat_api():
             context_truncated = False
             if len(content) > 80000:
                 context_truncated = True
-                original_len = len(content)
                 content = content[:80000] + "\n\n[... transcription truncated due to length ...]"
-                print(f"[CHAT DEBUG] ⚠ Transcription TRUNCATED: {original_len:,} → 80,000 chars")
             context_block = f"--- {title} ({date_short}) ---\n{content}\n"
             system_prompt += f"\n\n<meeting_transcriptions>\n{context_block}\n</meeting_transcriptions>\n\nThe user is asking about a specific meeting: {title} ({date_short}). Use the full transcription above as context. Reference the meeting by title and date."
         else:
@@ -906,13 +906,6 @@ def chat_api():
 
     # If meeting reference was in the message but not matched, return warning immediately
     if meeting_not_found_warning:
-        print(f"\n{'='*60}")
-        print(f"[CHAT DEBUG] Meeting NOT FOUND — returning warning to user")
-        debug_transcriptions = db.execute("SELECT title, meeting_date FROM transcriptions").fetchall()
-        print(f"[CHAT DEBUG] Available transcriptions ({len(debug_transcriptions)}):")
-        for dt in debug_transcriptions[:10]:
-            print(f"  - \"{dt['title']}\" | \"{dt['meeting_date']}\"")
-        print(f"{'='*60}\n")
         db.close()
         return jsonify({
             "response": meeting_not_found_warning,
@@ -925,36 +918,6 @@ def chat_api():
     # Add current user message
     messages.append({"role": "user", "content": user_message})
 
-    # ---- DEBUG: log full API payload ----
-    api_payload = {
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 4096,
-        "system": system_prompt,
-        "messages": messages,
-    }
-    debug_path = os.path.join(os.path.dirname(__file__), "debug_last_request.json")
-    with open(debug_path, "w", encoding="utf-8") as f:
-        json.dump(api_payload, f, ensure_ascii=False, indent=2)
-
-    # Also log available transcriptions for debugging match issues
-    debug_transcriptions = db.execute("SELECT title, meeting_date FROM transcriptions").fetchall()
-    print(f"\n{'='*60}")
-    print(f"[CHAT DEBUG] include_context: {include_context}")
-    print(f"[CHAT DEBUG] System prompt length: {len(system_prompt):,} chars")
-    print(f"[CHAT DEBUG] Messages count: {len(messages)}")
-    print(f"[CHAT DEBUG] Meeting matched: {meeting_ref_label or 'None (fallback mode)'}")
-    print(f"[CHAT DEBUG] Available transcriptions ({len(debug_transcriptions)}):")
-    for dt in debug_transcriptions[:10]:
-        print(f"  - \"{dt['title']}\" | \"{dt['meeting_date']}\"")
-    if len(debug_transcriptions) > 10:
-        print(f"  ... and {len(debug_transcriptions) - 10} more")
-    for i, m in enumerate(messages):
-        content_preview = m['content'][:120].replace('\n', ' ')
-        print(f"[CHAT DEBUG] Message {i}: [{m['role']}] {content_preview}...")
-    print(f"[CHAT DEBUG] Full payload saved to: {debug_path}")
-    print(f"{'='*60}\n")
-    # ---- END DEBUG ----
-
     try:
         resp = http_requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -964,7 +927,7 @@ def chat_api():
                 "anthropic-version": "2023-06-01",
             },
             json={
-                "model": "claude-sonnet-4-20250514",
+                "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
                 "max_tokens": 4096,
                 "system": system_prompt,
                 "messages": messages,
