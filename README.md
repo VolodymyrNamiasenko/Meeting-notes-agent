@@ -1,108 +1,82 @@
-# Meeting Manager
+# Meeting Notes Manager · Personal workflow
 
-A local web app that pulls structured meeting notes from Notion, parses them into actionable items, and lets you manage decisions, tickets, and discussion topics across all your meetings.
+A local Flask/SQLite application for importing meeting audio or transcripts, preparing evidence-linked draft notes and reviewing decisions and tasks. Existing Notion import and human-triggered Jira/ClickUp delivery remain available.
+
+## Where this app fits
+
+1. **Capture/import:** upload a recording for optional local faster-whisper transcription, paste an existing transcript, or import Notion notes/transcripts. Sembly exports may be pasted as text; no direct Sembly API integration or audio recorder is included.
+2. **Prepare a draft:** explicitly permit sending a transcript to Claude to generate JSON notes, or import a structured draft. Decisions, actions and topics must carry exact supporting quotes; unsupported owners/quotes and malformed output are rejected. This check does not prove semantic correctness.
+3. **Human review:** inspect the imported drafts and source meeting before choosing to create a Jira subtask or ClickUp task. Synchronizing notes does not automatically create remote tickets.
+4. **Optional Claude chat:** send a question and selected/recent transcript context to Anthropic. Review the response against the original transcript.
+
+Open **Import and review** for the new workflow. A draft must be reviewed before it creates local decisions and pending tasks. Edits and decisions retain a versioned history; stale/repeated approval is rejected. Sending approved local task drafts to Jira/ClickUp remains a separate explicit action. See [audio, draft and evaluation setup](docs/ADVANCED_WORKFLOWS.md).
+
+The supported workflow is personal tooling, distinct from a professional ERP/MES support pilot. The repository does not contain client meeting records or pilot results. See [capability evidence and a synthetic walkthrough](docs/PORTFOLIO.md).
 
 ## Features
 
-- **Notion sync** — fetches meeting notes from a Notion database
-- **Auto-parsing** — extracts decisions, JIRA tickets, ClickUp tickets, and discussion topics from your structured notes
-- **Consolidated views** — browse all decisions, tickets, and topics across meetings with search and filters
-- **ClickUp integration** — push internal tickets directly to a ClickUp list with one click
-- **Copy-to-clipboard** — one-click copy for JIRA tickets (title + description) and discussion topics
-- **Topic tracking** — mark customer/internal discussion topics as resolved
-- **Meeting history** — browse and re-sync individual meetings
+- Import and resynchronize notes from a shared Notion database.
+- Parse structured Markdown, including mixed heading levels.
+- Browse meeting history, decisions, topics, transcripts and activity statistics.
+- Draft or create Jira/ClickUp items from the interface.
+- Ask Claude questions using imported transcript context, with persisted local chat sessions.
+
+Statistics and generated answers depend on imported data quality; they are not independently verified summaries.
 
 ## Setup
 
-### 1. Install dependencies
+Requires Python 3.11+. Run from the repository root:
 
 ```bash
-cd meeting-manager
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. Set up Notion
-
-1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations)
-2. Create a new integration → copy the API token
-3. Open your meeting notes database in Notion
-4. Click `•••` → "Connections" → add your integration
-5. Copy the database ID from the URL: `notion.so/<workspace>/<DATABASE_ID>?v=...`
-
-### 3. Run the app
-
-```bash
 python app.py
 ```
 
-Open [http://localhost:5000](http://localhost:5000) in your browser.
+Open http://localhost:5001. Set `PORT` to change it. Debug mode is off unless `FLASK_DEBUG=1`. Set a private, stable `FLASK_SECRET_KEY` if sessions should survive restarts or multiple server instances.
 
-### 4. Configure
+In Settings, configure your Notion token and notes database ID; configure a separate transcriptions database ID to import transcripts. The integration must be explicitly connected to both databases. The client uses Notion API version `2022-06-28` and its database-query endpoint; live compatibility and permissions must be checked with your own integration, especially for newer multi-source database setups.
 
-1. Go to **Settings** in the sidebar
-2. Paste your Notion API token and database ID
-3. (Optional) Add your ClickUp API token and list ID
-4. Click **Save**
+Jira and ClickUp credentials are optional; verify the Jira parent key and ClickUp list before creating items. Anthropic chat is optional and requires an API key; API usage may incur charges. Chat uses `claude-sonnet-4-20250514` by default, configurable through `ANTHROPIC_MODEL`. Availability depends on your account. There is no local Ollama inference in this app.
 
-### 5. Sync
+No credentials are needed to start the empty app, browse its pages or run the mocked tests. For a safe walkthrough, put [the invented notes](examples/synthetic_meeting_notes.md) in a test Notion page and follow `docs/PORTFOLIO.md`. Do not use client data to demonstrate the public repository.
 
-Click **"Sync from Notion"** on the Dashboard. The app will:
-- Fetch all pages from your Notion database
-- Parse each page's structured meeting notes
-- Store all items in the local SQLite database
-- Skip pages that were already imported
+`config.json` contains credentials, and `meeting_manager.db` contains private notes/transcripts. Keep both out of Git and back them up privately. `MEETING_DB_PATH` can select another database.
 
-## Meeting Notes Format
+When chat context is enabled, transcript text leaves your computer for the Anthropic API; chat history is sent too. Up to 80,000 characters of context may be selected and long transcripts may be truncated or omitted. Only use data you are authorized to send. The app does not write full API payloads to debug files or print transcript titles/message excerpts by default. Chat content still persists locally in SQLite.
 
-Your Notion pages must follow this structure (with `###` headings):
+## Notes format
 
-```
+```markdown
 ### 1. DECISIONS LOG
-- **[DECISION-001]** Summary | Decided by: Name1, Name2
+- **[DECISION-001]** Summary | Decided by: Team
 
 ### 2. JIRA TICKETS — for Customer Team
-- **Title:** Action item title
-- **Description:** What needs to be done
+- **Title:** Action title
+- **Description:** Required change
 
 ### 3. CLICKUP TICKETS — for Internal Dev Team
-- **Title:** Action item title
-- **Description:** What needs to be done
+- **Title:** Internal task
+- **Description:** Expected outcome
 
 ### 4. TOPICS TO DISCUSS — with Customer
-1. **Topic** — Context
+1. **Scope** — Context
 
 ### 5. TOPICS TO DISCUSS — Internal Team
-1. **Topic** — Context
+1. **Build** — Context
 ```
 
-## File Structure
+## Checks
 
-```
-meeting-manager/
-├── app.py              # Flask web server + API routes
-├── database.py         # SQLite schema and connection
-├── parser.py           # Markdown meeting notes parser
-├── notion_client.py    # Notion API integration
-├── clickup_client.py   # ClickUp API integration
-├── config.json         # Your API tokens (auto-created, gitignore this)
-├── meeting_manager.db  # SQLite database (auto-created)
-├── requirements.txt
-├── README.md
-└── templates/
-    ├── base.html
-    ├── dashboard.html
-    ├── meetings.html
-    ├── meeting_detail.html
-    ├── decisions.html
-    ├── jira.html
-    ├── clickup.html
-    ├── topics.html
-    └── settings.html
+```bash
+python -m unittest discover -s tests -v
 ```
 
-## Tips
+Tests mock external services and create an isolated database. They do not create live tickets or modify Notion.
 
-- **Re-sync a meeting**: Click the ↻ button on any meeting to re-fetch from Notion (useful if you edited notes)
-- **Copy all open topics**: Use the "Copy all open" button on the Topics page to prepare your meeting agenda
-- **Search**: Every list page has a search bar that filters items in real-time
-- Add `config.json` to your `.gitignore` — it contains your API tokens
+## Deployment limits
+
+This is a local single-user tool, not a public service. There is no user-account authorization layer or complete CSRF protection. A randomly generated fallback secret prevents the old known-secret issue, but does not replace access controls. Do not expose the development server or private settings to the internet.
+
+Sync parsers and LLM answers need representative, human-reviewed evaluation. Live permissions, remote API compatibility and rate-limit behavior remain separate acceptance checks. See [evaluation guidance](docs/EVALUATION.md).

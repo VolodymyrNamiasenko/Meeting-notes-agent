@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "meeting_manager.db")
+DB_PATH = os.getenv("MEETING_DB_PATH", os.path.join(os.path.dirname(__file__), "meeting_manager.db"))
 
 
 def get_db():
@@ -101,7 +101,26 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS meeting_drafts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            transcription_id INTEGER NOT NULL REFERENCES transcriptions(id),
+            notes_json TEXT NOT NULL, provider TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending', version INTEGER NOT NULL DEFAULT 1,
+            reviewer TEXT, meeting_id INTEGER REFERENCES meetings(id), reviewed_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS draft_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, draft_id INTEGER NOT NULL REFERENCES meeting_drafts(id),
+            action TEXT NOT NULL, actor TEXT NOT NULL, note TEXT NOT NULL,
+            version INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     """)
+    conn.commit()
+
+    transcript_cols = {r[1] for r in conn.execute('PRAGMA table_info(transcriptions)')}
+    for name, sql in {'origin': "TEXT DEFAULT 'notion'", 'source_hash': 'TEXT', 'language': 'TEXT', 'segments_json': 'TEXT'}.items():
+        if name not in transcript_cols:conn.execute(f'ALTER TABLE transcriptions ADD COLUMN {name} {sql}')
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS transcript_source ON transcriptions(source_hash,title,COALESCE(meeting_date,'')) WHERE source_hash IS NOT NULL")
     conn.commit()
 
     # Migrations for existing databases

@@ -37,20 +37,13 @@ def _split_sections(content: str) -> list:
     """Split markdown content by heading markers into (header, body) pairs.
     Handles ###, ##, # and also Notion-style headings without markdown markers.
     """
-    # Try ### first, then ## then #
-    for marker in [r"^###\s+", r"^##\s+", r"^#\s+"]:
-        pattern = marker + r"(.+?)$"
-        parts = re.split(pattern, content, flags=re.MULTILINE)
-        if len(parts) > 1:
-            sections = []
-            for i in range(1, len(parts), 2):
-                header = parts[i].strip()
-                body = parts[i + 1].strip() if i + 1 < len(parts) else ""
-                sections.append((header, body))
-            return sections
+    # Accept mixed heading levels; a ### subsection must not hide ## sections.
+    parts = re.split(r"^#{1,6}\s+(.+?)\s*$", content, flags=re.MULTILINE)
+    if len(parts) > 1:
+        return [(parts[i].strip(), parts[i + 1].strip()) for i in range(1, len(parts), 2)]
 
     # Fallback: look for numbered section headers like "1. DECISIONS LOG"
-    pattern = r"^\d+\.\s+(DECISIONS|JIRA|CLICKUP|TOPICS).+$"
+    pattern = r"^\d+\.\s+((?:DECISIONS|JIRA|CLICKUP|TOPICS|CUSTOMER|INTERNAL)[^\n]*)$"
     parts = re.split(pattern, content, flags=re.MULTILINE | re.IGNORECASE)
     if len(parts) > 1:
         sections = []

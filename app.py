@@ -2,6 +2,7 @@ import os
 import json
 import re
 import uuid
+import secrets
 import requests as http_requests
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
@@ -12,7 +13,8 @@ from clickup_client import ClickUpClient
 from jira_client import JiraClient
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "meeting-manager-secret-key-change-me")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict", MAX_CONTENT_LENGTH=20 * 1024 * 1024)
 
 # ----- Config -----
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
@@ -68,6 +70,7 @@ def meeting_detail(meeting_id):
     db = get_db()
     meeting = db.execute("SELECT * FROM meetings WHERE id=?", (meeting_id,)).fetchone()
     if not meeting:
+        db.close()
         return "Meeting not found", 404
 
     data = {
@@ -174,8 +177,76 @@ def statistics_page():
         FROM meetings m
         ORDER BY m.meeting_date DESC
     """).fetchall()
+
+    # Derive meeting duration (minutes) from matching transcription content.
+    # Transcripts contain HH:MM:SS timestamps per speaker turn; the max timestamp
+    # is taken as the meeting length.
+    transcriptions = db.execute(
+        "SELECT id, title, meeting_date, content FROM transcriptions WHERE content IS NOT NULL"
+    ).fetchall()
+
+    ts_rows = []
+    for t in transcriptions:
+        content = t["content"] or ""
+        matches = re.findall(r"(\d{1,2}):(\d{2}):(\d{2})", content)
+        if not matches:
+            continue
+        max_secs = max(int(h) * 3600 + int(mm) * 60 + int(s) for h, mm, s in matches)
+        ts_rows.append({
+            "id": t["id"],
+            "title": (t["title"] or "").lower(),
+            "date": (t["meeting_date"] or "")[:10],
+            "minutes": max_secs / 60.0,
+            "used": False,
+        })
+
+    def _words(s):
+        return set(re.findall(r"\w{4,}", (s or "").lower()))
+
+    # Pass 1: compute best-candidate overlap per meeting, then greedily assign
+    # each transcription to the meeting with the highest title-word overlap on
+    # that date. This prevents the same transcription being counted multiple
+    # times when several meetings share a date.
+    meetings_by_date = {}
+    for idx, m in enumerate(meetings):
+        d = (m["meeting_date"] or "")[:10]
+        meetings_by_date.setdefault(d, []).append(idx)
+
+    duration_by_idx = {i: 0.0 for i in range(len(meetings))}
+    for date_key, idx_list in meetings_by_date.items():
+        if not date_key:
+            continue
+        candidates = [t for t in ts_rows if t["date"] == date_key]
+        if not candidates:
+            continue
+        # Build (meeting_idx, transcription, overlap) tuples, sort desc by overlap
+        pairs = []
+        for i in idx_list:
+            mw = _words(meetings[i]["title"])
+            for t in candidates:
+                ov = len(mw & _words(t["title"]))
+                pairs.append((ov, i, t))
+        pairs.sort(key=lambda x: -x[0])
+
+        assigned_meetings = set()
+        for ov, i, t in pairs:
+            if t["used"] or i in assigned_meetings:
+                continue
+            # Require overlap > 0, OR allow zero-overlap only if exactly one
+            # meeting and one transcription share the date.
+            if ov > 0 or (len(idx_list) == 1 and len(candidates) == 1):
+                duration_by_idx[i] = t["minutes"]
+                t["used"] = True
+                assigned_meetings.add(i)
+
+    meetings_out = []
+    for i, m in enumerate(meetings):
+        d = dict(m)
+        d["duration_minutes"] = round(duration_by_idx[i], 1)
+        meetings_out.append(d)
+
     db.close()
-    return render_template("statistics.html", meetings=meetings)
+    return render_template("statistics.html", meetings=meetings_out)
 
 
 @app.route("/settings")
@@ -374,6 +445,10 @@ def create_clickup_task():
         db.close()
         return jsonify({"error": "Ticket not found"}), 404
 
+    if (ticket["status"] or "pending") != "pending":
+        db.close()
+        return jsonify({"error": "Only pending drafts can be sent. Review the existing item or cancellation."}), 409
+
     try:
         client = ClickUpClient(clickup_token)
         desc = ticket["description"] or ""
@@ -465,6 +540,10 @@ def create_jira_subtask():
         db.close()
         return jsonify({"error": "Ticket not found"}), 404
 
+    if (ticket["status"] or "pending") != "pending":
+        db.close()
+        return jsonify({"error": "Only pending drafts can be sent. Review the existing item or cancellation."}), 409
+
     try:
         # Build the subtask payload
         base_url = f"https://{jira_domain}/rest/api/3"
@@ -519,6 +598,7 @@ def create_jira_subtask():
 
         if resp.status_code not in (200, 201):
             error_detail = resp.text[:500]
+            db.close()
             return jsonify({"error": f"Jira API error ({resp.status_code}): {error_detail}"}), 500
 
         result = resp.json()
@@ -665,15 +745,12 @@ def _find_meeting_in_message(user_message, db):
     ).fetchall()
 
     if not transcriptions:
-        print(f"[MATCH DEBUG] No transcriptions in database")
         return None
 
     msg_lower = user_message.lower().strip()
 
     # Extract all YYYY-MM-DD dates from user message
     msg_dates = re.findall(r'\d{4}-\d{2}-\d{2}', user_message)
-    print(f"[MATCH DEBUG] Dates found in message: {msg_dates}")
-    print(f"[MATCH DEBUG] Total transcriptions to check: {len(transcriptions)}")
 
     best_match_id = None
     best_score = 0
@@ -701,14 +778,10 @@ def _find_meeting_in_message(user_message, db):
         if date_found:
             score += 2
 
-        if score > 0:
-            print(f"[MATCH DEBUG]   '{title}' | stored={raw_date} → short={stored_date_short} | title_match={title_found} date_match={date_found} → score={score}")
-
         if score > best_score:
             best_score = score
             best_match_id = t["id"]
 
-    print(f"[MATCH DEBUG] Best score: {best_score} (need >= 4 for match)")
 
     # Require both title AND date to match (score >= 4)
     if best_score >= 4 and best_match_id:
@@ -796,9 +869,7 @@ def chat_api():
             context_truncated = False
             if len(content) > 80000:
                 context_truncated = True
-                original_len = len(content)
                 content = content[:80000] + "\n\n[... transcription truncated due to length ...]"
-                print(f"[CHAT DEBUG] ⚠ Transcription TRUNCATED: {original_len:,} → 80,000 chars")
             context_block = f"--- {title} ({date_short}) ---\n{content}\n"
             system_prompt += f"\n\n<meeting_transcriptions>\n{context_block}\n</meeting_transcriptions>\n\nThe user is asking about a specific meeting: {title} ({date_short}). Use the full transcription above as context. Reference the meeting by title and date."
         else:
@@ -835,13 +906,6 @@ def chat_api():
 
     # If meeting reference was in the message but not matched, return warning immediately
     if meeting_not_found_warning:
-        print(f"\n{'='*60}")
-        print(f"[CHAT DEBUG] Meeting NOT FOUND — returning warning to user")
-        debug_transcriptions = db.execute("SELECT title, meeting_date FROM transcriptions").fetchall()
-        print(f"[CHAT DEBUG] Available transcriptions ({len(debug_transcriptions)}):")
-        for dt in debug_transcriptions[:10]:
-            print(f"  - \"{dt['title']}\" | \"{dt['meeting_date']}\"")
-        print(f"{'='*60}\n")
         db.close()
         return jsonify({
             "response": meeting_not_found_warning,
@@ -854,36 +918,6 @@ def chat_api():
     # Add current user message
     messages.append({"role": "user", "content": user_message})
 
-    # ---- DEBUG: log full API payload ----
-    api_payload = {
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 4096,
-        "system": system_prompt,
-        "messages": messages,
-    }
-    debug_path = os.path.join(os.path.dirname(__file__), "debug_last_request.json")
-    with open(debug_path, "w", encoding="utf-8") as f:
-        json.dump(api_payload, f, ensure_ascii=False, indent=2)
-
-    # Also log available transcriptions for debugging match issues
-    debug_transcriptions = db.execute("SELECT title, meeting_date FROM transcriptions").fetchall()
-    print(f"\n{'='*60}")
-    print(f"[CHAT DEBUG] include_context: {include_context}")
-    print(f"[CHAT DEBUG] System prompt length: {len(system_prompt):,} chars")
-    print(f"[CHAT DEBUG] Messages count: {len(messages)}")
-    print(f"[CHAT DEBUG] Meeting matched: {meeting_ref_label or 'None (fallback mode)'}")
-    print(f"[CHAT DEBUG] Available transcriptions ({len(debug_transcriptions)}):")
-    for dt in debug_transcriptions[:10]:
-        print(f"  - \"{dt['title']}\" | \"{dt['meeting_date']}\"")
-    if len(debug_transcriptions) > 10:
-        print(f"  ... and {len(debug_transcriptions) - 10} more")
-    for i, m in enumerate(messages):
-        content_preview = m['content'][:120].replace('\n', ' ')
-        print(f"[CHAT DEBUG] Message {i}: [{m['role']}] {content_preview}...")
-    print(f"[CHAT DEBUG] Full payload saved to: {debug_path}")
-    print(f"{'='*60}\n")
-    # ---- END DEBUG ----
-
     try:
         resp = http_requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -893,7 +927,7 @@ def chat_api():
                 "anthropic-version": "2023-06-01",
             },
             json={
-                "model": "claude-sonnet-4-20250514",
+                "model": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514"),
                 "max_tokens": 4096,
                 "system": system_prompt,
                 "messages": messages,
@@ -1026,6 +1060,10 @@ def chat_clear():
     return jsonify({"ok": True})
 
 
+# Initialize for both the CLI and WSGI imports (e.g. gunicorn app:app).
+from pipeline_routes import create_blueprint
+app.register_blueprint(create_blueprint(load_config))
+init_db()
+
 if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, port=5000)
+    app.run(host="127.0.0.1", debug=os.getenv("FLASK_DEBUG") == "1", port=int(os.getenv("PORT", "5001")))

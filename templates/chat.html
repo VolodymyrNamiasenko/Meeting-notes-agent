@@ -410,7 +410,7 @@ How can I help?</div>
 <script>
 let includeContext = true;
 let isStreaming = false;
-let currentSessionId = {{ ('"' + current_session_id + '"') | safe if current_session_id else 'null' }};
+let currentSessionId = {{ current_session_id | tojson }};
 
 function toggleContext() {
     includeContext = !includeContext;

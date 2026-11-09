@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Import and review — Meeting Manager{% endblock %}
+{% block content %}
+<div class="page-header"><h2>Import and review</h2><p>Turn a recording or transcript into notes and task drafts you can check before use.</p></div>
+<div class="card"><div class="card-body">
+  <h3>1. Add a transcript</h3>
+  <label>Meeting title<input id="captureTitle" maxlength="160" placeholder="Weekly production review"></label>
+  <label>Meeting date<input id="captureDate" type="date"></label>
+  <label>Paste a transcript<textarea id="captureText" rows="5" maxlength="200000" placeholder="Paste text exported from Sembly, Notion or another transcription tool."></textarea></label>
+  <button class="btn btn-primary" id="importText">Import transcript</button>
+  <p style="margin-top:14px">Or transcribe a recording locally:</p>
+  <input id="captureAudio" type="file" accept=".wav,.mp3,.m4a,.flac,.ogg,.webm">
+  <button class="btn" id="transcribeAudio">Transcribe recording</button>
+  <p id="audioStatus" style="color:var(--text-muted);margin-top:8px"></p>
+</div></div>
+<div class="card"><div class="card-body">
+  <h3>2. Prepare draft notes</h3>
+  <label>Transcript<select id="transcriptChoice"><option value="">Choose a transcript</option>{% for t in transcripts %}<option value="{{ t.id }}">{{ t.title }} · {{ t.meeting_date or 'No date' }}</option>{% endfor %}</select></label>
+  <label><input id="allowClaude" type="checkbox"> I permit this transcript to be sent to Claude to generate draft notes.</label>
+  <button class="btn btn-primary" id="generateDraft">Generate draft with Claude</button>
+  <p id="claudeStatus" style="color:var(--text-muted);margin-top:8px">Generated notes require review. Creating a draft does not send tasks to Jira or ClickUp.</p>
+  <details style="margin-top:14px"><summary>Import an existing structured draft</summary>
+    <p>Paste the JSON described in the workflow guide, with a source quote for each item.</p>
+    <textarea id="manualNotes" rows="4" placeholder='{"summary":"…","decisions":[],"actions":[],"topics":[]}'></textarea>
+    <button class="btn" id="importDraft">Import draft</button>
+  </details>
+</div></div>
+<div class="card"><div class="card-body">
+  <h3>3. Review notes and task drafts</h3>
+  <select id="draftChoice"><option value="">Choose a draft</option></select>
+  <div id="draftPanel" hidden>
+    <p id="draftStatus"></p>
+    <details><summary>Read the source transcript</summary><pre id="sourceTranscript" style="white-space:pre-wrap;max-height:300px;overflow:auto"></pre></details>
+    <div id="draftNotes" style="margin-top:14px"></div>
+    <label>Reviewer name<input id="reviewer" maxlength="80"></label>
+    <label>Review note<textarea id="reviewNote" rows="2" maxlength="4000"></textarea></label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+      <button class="btn" id="saveDraft">Save edits</button>
+      <button class="btn btn-primary" id="approveDraft">Approve and create local drafts</button>
+      <button class="btn" id="rejectDraft">Reject</button>
+    </div>
+    <p id="meetingResult" style="margin-top:10px"></p>
+    <ol id="draftHistory" style="margin:12px 0 0 20px"></ol>
+  </div>
+  <p id="pipelineMessage" role="status" style="margin-top:12px"></p>
+</div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+let currentDraft = null;
+let workingNotes = null;
+const el = id => document.getElementById(id);
+let working = false;
+async function api(path, data, multipart = false) {
+  const options = data === undefined ? {} : {method:'POST', ...(multipart ? {body:data} : {headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})};
+  const response = await fetch(path, options);
+  let value; try { value = await response.json(); } catch { throw new Error('The request could not be processed. Check the file size and server.'); }
+  if (!response.ok) throw new Error(value.error || 'Request failed'); return value;
+}
+async function action(label, fn) {
+  if (working) return; working = true;
+  document.querySelectorAll('main button').forEach(b => b.disabled = true);
+  el('pipelineMessage').textContent = label;
+  try { await fn(); } catch(e) { el('pipelineMessage').textContent = e.message; }
+  finally { working = false; document.querySelectorAll('main button').forEach(b => b.disabled = false); }
+}
+function capture() { return {title:el('captureTitle').value,meeting_date:el('captureDate').value}; }
+function chooseTranscript(result) {
+  const id=String(result.id); let option=Array.from(el('transcriptChoice').options).find(o=>o.value===id);
+  if (!option) { option=new Option(el('captureTitle').value,id);el('transcriptChoice').add(option); }
+  el('transcriptChoice').value=id; el('pipelineMessage').textContent=result.duplicate?'This transcript was already imported.':'Transcript saved. Review it before generating notes.';
+}
+el('importText').onclick=()=>action('Importing…',async()=>chooseTranscript(await api('/api/pipeline/import',{...capture(),content:el('captureText').value})));
+el('transcribeAudio').onclick=()=>action('Transcribing locally. This may take a few minutes…',async()=>{
+  const file=el('captureAudio').files[0]; if(!file)throw new Error('Choose a recording first.');
+  if(file.size>18*1024*1024)throw new Error('Choose an audio file of 18 MB or less.');
+  const data=new FormData();data.append('audio',file);const meta=capture();data.append('title',meta.title);data.append('meeting_date',meta.meeting_date);
+  chooseTranscript(await api('/api/pipeline/transcribe',data,true));
+});
+async function loadList(selected) {
+  const data=await api('/api/pipeline/drafts'); const select=el('draftChoice');select.replaceChildren(new Option('Choose a draft',''));
+  data.items.forEach(item=>select.add(new Option(`${item.title} · ${item.status}`,item.id)));
+  if(selected)select.value=String(selected);
+}
+function showDraft(value) {
+  currentDraft=value;workingNotes=JSON.parse(JSON.stringify(value.notes));el('draftPanel').hidden=false;renderNotes();
+  el('sourceTranscript').textContent=value.transcript;el('draftStatus').textContent=`Status: ${value.status} · Version ${value.version}`;
+  el('draftHistory').replaceChildren();value.events.forEach(e=>{const li=document.createElement('li');li.textContent=`${e.created_at} · ${e.actor} · ${e.action}${e.note?' · '+e.note:''}`;el('draftHistory').append(li);});
+  el('meetingResult').replaceChildren();if(value.meeting_id){const a=document.createElement('a');a.href=`/meetings/${value.meeting_id}`;a.textContent='Open reviewed meeting and pending tasks';el('meetingResult').append(a);}
+}
+function renderNotes() {
+  const container=el('draftNotes');container.replaceChildren();const editable=currentDraft.status==='pending';
+  function field(parent,label,value,save,multiline=false,options=null){
+    const wrap=document.createElement('label');wrap.style.cssText='display:block;margin:10px 0';wrap.append(document.createTextNode(label));
+    const input=document.createElement(options?'select':multiline?'textarea':'input');input.style.cssText='display:block;width:100%;margin-top:4px';
+    if(options)options.forEach(v=>input.add(new Option(v,v)));if(multiline)input.rows=3;
+    input.value=value;input.disabled=!editable;input.addEventListener('input',()=>save(input.value));wrap.append(input);parent.append(wrap);
+  }
+  field(container,'Meeting summary',workingNotes.summary,v=>workingNotes.summary=v,true);
+  const names={decisions:'Decisions',actions:'Task drafts',topics:'Discussion topics'};
+  for(const section of ['decisions','actions','topics']){
+    const heading=document.createElement('h4');heading.textContent=names[section];heading.style.marginTop='18px';container.append(heading);
+    workingNotes[section].forEach((item,index)=>{
+      const box=document.createElement('div');box.style.cssText='border:1px solid var(--border);padding:12px;margin:10px 0;border-radius:8px';container.append(box);
+      const category=section==='decisions'?'decision':section==='actions'?'task':'topic';
+      field(box,`${category[0].toUpperCase()+category.slice(1)} ${index+1}`,item.text??item.title,v=>{if(section==='actions')item.title=v;else item.text=v;});
+      if(section==='actions')field(box,`Description for ${category} ${index+1}`,item.description,v=>item.description=v,true);
+      if(section!=='topics')field(box,`Owner for ${category} ${index+1}`,item.owner,v=>item.owner=v);
+      if(section==='actions')field(box,`Destination for ${category} ${index+1}`,item.destination,v=>item.destination=v,false,['clickup','jira']);
+      if(section==='topics')field(box,`Audience for ${category} ${index+1}`,item.audience,v=>item.audience=v,false,['internal','customer']);
+      field(box,`Supporting quote for ${category} ${index+1}`,item.quote,v=>item.quote=v,true);
+      if(editable){const remove=document.createElement('button');remove.className='btn';remove.textContent=`Remove ${category}`;remove.onclick=()=>{workingNotes[section].splice(index,1);renderNotes();};box.append(remove);}
+    });
+    if(editable){const add=document.createElement('button');add.className='btn';add.textContent=`Add ${section==='decisions'?'decision':section==='actions'?'task':'topic'}`;add.onclick=()=>{
+      if(workingNotes[section].length>=30){el('pipelineMessage').textContent='Each section supports up to 30 items.';return;}
+      workingNotes[section].push(section==='decisions'?{text:'',owner:'',quote:''}:section==='actions'?{title:'',description:'',owner:'',destination:'clickup',quote:''}:{text:'',audience:'internal',quote:''});renderNotes();};container.append(add);}
+  }
+}
+el('draftChoice').onchange=()=>action('Loading draft…',async()=>{if(!el('draftChoice').value){el('draftPanel').hidden=true;return;}showDraft(await api(`/api/pipeline/drafts/${el('draftChoice').value}`));el('pipelineMessage').textContent='Check the notes against the source quotes.';});
+async function createDraft(manual) {
+  const id=el('transcriptChoice').value;if(!id)throw new Error('Choose a transcript first.');
+  if(!manual&&!el('allowClaude').checked)throw new Error('Confirm permission to send this transcript to Claude.');
+  const value=await api(`/api/pipeline/transcripts/${id}/${manual?'draft':'generate'}`,manual?{notes:JSON.parse(el('manualNotes').value)}:{allow_external:true});
+  await loadList(value.id);showDraft(value);el('pipelineMessage').textContent='Draft ready for your review. No remote tasks have been created.';
+}
+el('generateDraft').onclick=()=>action('Preparing draft…',()=>createDraft(false));
+el('importDraft').onclick=()=>action('Importing draft…',()=>createDraft(true));
+async function review(decision) {
+  if(!currentDraft)throw new Error('Choose a draft.');
+  if(decision==='approved' && JSON.stringify(workingNotes)!==JSON.stringify(currentDraft.notes))throw new Error('Save your edits before approving this draft.');
+  const payload={version:currentDraft.version,reviewer:el('reviewer').value};
+  const path=decision?'review':'edit';
+  if(decision){payload.decision=decision;payload.note=el('reviewNote').value;}else payload.notes=workingNotes;
+  showDraft(await api(`/api/pipeline/drafts/${currentDraft.id}/${path}`,payload));await loadList(currentDraft.id);
+  el('pipelineMessage').textContent=decision==='approved'?'Approved. Local task drafts are pending; sending them is a separate action.':decision==='rejected'?'Draft rejected.':'Edits saved. Review again before approval.';
+}
+el('saveDraft').onclick=()=>action('Saving…',()=>review(null));
+el('approveDraft').onclick=()=>action('Applying review…',()=>review('approved'));
+el('rejectDraft').onclick=()=>action('Applying review…',()=>review('rejected'));
+Promise.all([loadList(),api('/api/pipeline/status').then(s=>{el('audioStatus').textContent=s.audio_ready?'Local transcription is configured. Recordings are deleted after processing.':'Local transcription needs the optional audio package and a local Whisper model; see the setup guide.';if(!s.claude_configured)el('claudeStatus').textContent='Configure a Claude API key in Settings to generate notes, or import an existing structured draft.';})]).catch(e=>el('pipelineMessage').textContent=e.message);
+</script>
+{% endblock %}

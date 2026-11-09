@@ -10,3 +10,5 @@ debug_last_request.json
 meeting-manager/
 # General SQLite / local DB files
 *.db
+*.db-*
+local-models/

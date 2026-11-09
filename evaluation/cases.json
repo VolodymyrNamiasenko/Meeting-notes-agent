@@ -1,0 +1,6 @@
+[
+  {"name":"supported decision", "transcript":"The team agreed to use a test database.", "expected_valid":true, "notes":{"summary":"Use a test database.","decisions":[{"text":"Use test database","owner":"","quote":"The team agreed to use a test database."}],"actions":[],"topics":[]}},
+  {"name":"invented evidence rejected", "transcript":"The team agreed to use a test database.", "expected_valid":false, "notes":{"summary":"Use production.","decisions":[{"text":"Use production","owner":"","quote":"The team approved production access."}],"actions":[],"topics":[]}},
+  {"name":"invented owner rejected", "transcript":"Prepare the test checklist.", "expected_valid":false, "notes":{"summary":"Prepare a checklist.","decisions":[],"actions":[{"title":"Prepare checklist","description":"","owner":"Invented Person","destination":"clickup","quote":"Prepare the test checklist."}],"topics":[]}},
+  {"name":"empty item lists accepted", "transcript":"No decisions were made.", "expected_valid":true, "notes":{"summary":"No decisions.","decisions":[],"actions":[],"topics":[]}}
+]
