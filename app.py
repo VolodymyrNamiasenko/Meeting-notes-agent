@@ -1061,6 +1061,8 @@ def chat_clear():
 
 
 # Initialize for both the CLI and WSGI imports (e.g. gunicorn app:app).
+from pipeline_routes import create_blueprint
+app.register_blueprint(create_blueprint(load_config))
 init_db()
 
 if __name__ == "__main__":

@@ -5,8 +5,10 @@
 | Notion notes/transcript import | `notion_client.py`, sync routes in `app.py` | Requires existing pages and a connected integration; top-level supported block text only |
 | Structured decisions and drafts | `parser.py`, `database.py` | Rule-based Markdown parsing, not automatic AI note generation |
 | Human-triggered delivery | Jira/ClickUp routes and review pages | Import creates local pending drafts; remote writes require a separate user action |
-| Transcript question answering | Claude Messages request in `app.py` | Sends context/history to Anthropic; no transcription or local model execution |
-| Upstream transcription | Outside this repository | Sembly AI may supply the upstream transcript; no Sembly SDK/API integration is implemented here |
+| Transcript question answering | Claude Messages request in `app.py` | Sends context/history to Anthropic when requested |
+| Local audio transcription | `audio_transcription.py`, pipeline upload route and Import and review page | Optional faster-whisper dependency and a preinstalled local model; bounded files/duration, no audio recorder or Sembly API |
+| Grounded AI note drafts | `meeting_pipeline.py` and pipeline routes | Explicit Claude consent; schema and exact-quote validation; semantic meaning still needs review |
+| Draft review | Versioned draft edits, decisions and event history | Approval creates only local pending tasks; reviewer names are self-reported, not authenticated identities |
 
 The combined portfolio stack spans multiple projects: this app uses Python, Flask, SQLite/SQL, Notion API and optional Claude; FastAPI, Ollama and Chroma belong to the separate support assistant. A public repository is not evidence of professional pilot outcomes.
 

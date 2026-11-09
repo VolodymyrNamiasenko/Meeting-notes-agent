@@ -1,13 +1,15 @@
 # Meeting Notes Manager · Personal workflow
 
-A local Flask/SQLite application for reviewing structured meeting notes and transcripts imported from Notion. It connects a personal AI-assisted meeting workflow to searchable decisions, discussion topics and human-triggered Jira/ClickUp task creation.
+A local Flask/SQLite application for importing meeting audio or transcripts, preparing evidence-linked draft notes and reviewing decisions and tasks. Existing Notion import and human-triggered Jira/ClickUp delivery remain available.
 
 ## Where this app fits
 
-1. **Upstream, outside this repository:** record/transcribe a meeting (for example with Sembly AI) and prepare structured notes in a Notion database. This app does not record audio, transcribe it or call a Sembly API.
-2. **Inside this repository:** import notes/transcripts from configured Notion databases; parse decisions, ticket drafts and topics into SQLite.
+1. **Capture/import:** upload a recording for optional local faster-whisper transcription, paste an existing transcript, or import Notion notes/transcripts. Sembly exports may be pasted as text; no direct Sembly API integration or audio recorder is included.
+2. **Prepare a draft:** explicitly permit sending a transcript to Claude to generate JSON notes, or import a structured draft. Decisions, actions and topics must carry exact supporting quotes; unsupported owners/quotes and malformed output are rejected. This check does not prove semantic correctness.
 3. **Human review:** inspect the imported drafts and source meeting before choosing to create a Jira subtask or ClickUp task. Synchronizing notes does not automatically create remote tickets.
 4. **Optional Claude chat:** send a question and selected/recent transcript context to Anthropic. Review the response against the original transcript.
+
+Open **Import and review** for the new workflow. A draft must be reviewed before it creates local decisions and pending tasks. Edits and decisions retain a versioned history; stale/repeated approval is rejected. Sending approved local task drafts to Jira/ClickUp remains a separate explicit action. See [audio, draft and evaluation setup](docs/ADVANCED_WORKFLOWS.md).
 
 The supported workflow is personal tooling, distinct from a professional ERP/MES support pilot. The repository does not contain client meeting records or pilot results. See [capability evidence and a synthetic walkthrough](docs/PORTFOLIO.md).
 
